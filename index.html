@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Baseline</title>
+<meta name="theme-color" content="#2f7d5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Baseline">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="appbar">
+  <div class="appbar-row">
+    <h1>Baseline</h1>
+    <span class="date" id="todayDate"></span>
+    <button class="gear" id="gearBtn" aria-label="Settings">⚙︎</button>
+  </div>
+</header>
+
+<main>
+  <section class="view" id="view-today"></section>
+  <section class="view" id="view-move"></section>
+  <section class="view" id="view-meals"></section>
+  <section class="view" id="view-trends"></section>
+</main>
+
+<nav class="tabs">
+  <div class="tabs-row">
+    <button data-tab="today" class="on"><span class="ico">☀︎</span>Today</button>
+    <button data-tab="move"><span class="ico">↯</span>Move</button>
+    <button data-tab="meals"><span class="ico">🍽</span>Meals</button>
+    <button data-tab="trends"><span class="ico">〜</span>Trends</button>
+  </div>
+</nav>
+
+<div class="sheet-backdrop" id="sheetBackdrop">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<div id="timerOverlay">
+  <div class="phase" id="timerPhase">Ready</div>
+  <div class="clock" id="timerClock">0:00</div>
+  <div class="round" id="timerRound"></div>
+  <div class="controls">
+    <button class="btn secondary" id="timerPause">Pause</button>
+    <button class="btn subtle" id="timerStop">End</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="db.js"></script>
+<script src="content.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
