@@ -1,5 +1,5 @@
 /* Baseline — service worker: cache-first app shell for offline use. */
-const CACHE = "baseline-v6";
+const CACHE = "baseline-v7";
 const SHELL = [
   "./",
   "./index.html",

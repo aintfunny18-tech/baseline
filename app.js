@@ -342,13 +342,17 @@ RENDER.today = async function () {
       : `<div class="chip-row"><span class="lbl">Which dinner tonight?</span>
            ${mw && mw.meals.length ? mw.meals.map((m, i) => m.cooked ? "" :
              `<button class="chip small" data-pick-tonight="${i}">${esc(m.name.length > 42 ? m.name.slice(0, 40) + "…" : m.name)}</button>`).join("") : ""}
-           <button class="chip small" id="tonightOther">Other…</button>
+           <button class="chip small" id="tonightOther">Other dinner…</button>
          </div>
          ${mw && mw.meals.length ? "" : `<p class="hint">Meal week arrives with sync, or paste one in the Meals tab.</p>`}`}
     ${mealsLogged.map((m) => `<p style="margin:4px 0" class="quiet">${esc(m.slot)}: ${esc(m.text)}
       <button class="btn subtle fit" data-del-meal="${m.id}" style="padding:2px 8px; font-size:12px">×</button></p>`).join("")}
-    <div class="row" style="margin-top:10px">
-      <input type="text" id="mealIn" placeholder="Anything else — breakfast, eating out…">
+    <div class="chip-row" style="margin-top:10px"><span class="lbl">Add anything else you ate</span>
+      ${["Breakfast", "Lunch", "Snack", "Dinner"].map((s) =>
+        `<button class="chip small ${s === defaultMealSlot() ? "on" : ""}" data-slot="${s}">${s}</button>`).join("")}
+    </div>
+    <div class="row">
+      <input type="text" id="mealIn" placeholder="e.g., breakfast sandwich, tacos out…">
       <button class="btn secondary fit" id="mealAdd">Add</button>
     </div>
   </div>
@@ -404,12 +408,15 @@ RENDER.today = async function () {
     if (mw) { mw.tonight = null; await DB.put("mealweek", mw); }
     RENDER.today();
   });
+  let mealSlot = defaultMealSlot();
+  $$("[data-slot]", view).forEach((b) => b.addEventListener("click", () => {
+    mealSlot = b.dataset.slot;
+    $$("[data-slot]", view).forEach((x) => x.classList.toggle("on", x === b));
+  }));
   $("#mealAdd").addEventListener("click", async () => {
     const text = $("#mealIn").value.trim();
     if (!text) return;
-    const hr = new Date().getHours();
-    const slot = hr < 10.5 ? "Breakfast" : hr < 15 ? "Lunch" : hr < 21 ? "Dinner" : "Late";
-    await DB.put("meallog", { date, slot, text });
+    await DB.put("meallog", { date, slot: mealSlot, text });
     RENDER.today();
   });
   $$("[data-del-meal]", view).forEach((b) => b.addEventListener("click", async () => {
@@ -425,6 +432,15 @@ RENDER.today = async function () {
 
   if (showReview) renderReviewCard();
 };
+
+function defaultMealSlot() {
+  const hr = new Date().getHours() + new Date().getMinutes() / 60;
+  if (hr < 10.5) return "Breakfast";
+  if (hr < 14.5) return "Lunch";
+  if (hr < 17) return "Snack";
+  if (hr < 21) return "Dinner";
+  return "Snack";
+}
 
 function tonightMeal(mw) {
   // Only what Anthony actually picked — never assume an order.
