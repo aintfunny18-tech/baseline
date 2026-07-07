@@ -178,6 +178,68 @@ async function syncNow(quiet = false) {
   return changed;
 }
 
+/* ---------- push notifications ---------- */
+const VAPID_PUBLIC_KEY = "BNMHh-l5yP2Uj-2elH5pgPJENpjze1S_7SU-h4W2E7q5szxgpE1-B5N3YIbxoiT3-Nls1dncfDcOAlaT6eFGlx8";
+
+function b64ToUint8(base64) {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function putSyncFile(name, obj) {
+  const cfg = syncConfig();
+  if (!cfg.pat) throw new Error("Set the sync token first");
+  const api = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${name}`;
+  const headers = { Authorization: `Bearer ${cfg.pat}`, Accept: "application/vnd.github+json" };
+  let sha;
+  const probe = await fetch(api, { headers, cache: "no-store" });
+  if (probe.ok) sha = (await probe.json()).sha;
+  const body = {
+    message: `app: update ${name}`,
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(obj, null, 1)))),
+  };
+  if (sha) body.sha = sha;
+  const res = await fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`${name}: HTTP ${res.status} — the token likely needs read-and-write Contents access`);
+}
+
+async function enableNotifications() {
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    toast("Push isn't available here. On the iPhone, use the home-screen app.");
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") { toast("Notifications stay off until allowed"); return; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: b64ToUint8(VAPID_PUBLIC_KEY),
+    });
+    await putSyncFile("subscription.json", sub.toJSON());
+    await DB.put("kv", { key: "pushEndpoint", value: sub.endpoint });
+    toast("Nudges on — morning, lunch, dinner");
+  } catch (err) {
+    toast("Could not finish setup: " + err.message);
+  }
+}
+
+/* iOS occasionally rotates subscriptions — keep the stored one current. */
+async function refreshPushSubscription() {
+  try {
+    if (!("PushManager" in window) || Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return;
+    const cached = await DB.get("kv", "pushEndpoint");
+    if (!cached || cached.value !== sub.endpoint) {
+      await putSyncFile("subscription.json", sub.toJSON());
+      await DB.put("kv", { key: "pushEndpoint", value: sub.endpoint });
+    }
+  } catch { /* quiet — retried next open */ }
+}
+
 /* ---------- sheet (modal) ---------- */
 function openSheet(html) {
   $("#sheet").innerHTML = html;
@@ -274,8 +336,14 @@ RENDER.today = async function () {
     <h2>Meals today</h2>
     ${lastDinner ? `<p style="margin:4px 0">Lunch: leftovers — ${esc(lastDinner.value)}</p>` : ""}
     ${tonight
-      ? `<p style="margin:4px 0">Tonight: <strong>${esc(tonight)}</strong></p>`
-      : `<p class="hint" style="margin-top:4px">No meal week loaded. It arrives with sync, or paste one in the Meals tab.</p>`}
+      ? `<p style="margin:4px 0">Tonight: <strong>${esc(tonight)}</strong>
+           <button class="btn subtle fit" id="tonightChange" style="padding:2px 10px; font-size:12px">change</button></p>`
+      : mw && mw.meals.length
+        ? `<div class="chip-row"><span class="lbl">Which dinner tonight?</span>
+             ${mw.meals.map((m, i) => m.cooked ? "" :
+               `<button class="chip small" data-pick-tonight="${i}">${esc(m.name.length > 42 ? m.name.slice(0, 40) + "…" : m.name)}</button>`).join("")}
+           </div>`
+        : `<p class="hint" style="margin-top:4px">No meal week loaded. It arrives with sync, or paste one in the Meals tab.</p>`}
     ${mealsLogged.map((m) => `<p style="margin:4px 0" class="quiet">${esc(m.slot)}: ${esc(m.text)}
       <button class="btn subtle fit" data-del-meal="${m.id}" style="padding:2px 8px; font-size:12px">×</button></p>`).join("")}
     <div class="row" style="margin-top:10px">
@@ -315,6 +383,18 @@ RENDER.today = async function () {
     $("#winIn").value = "";
     toast("Win logged");
   });
+  $$("[data-pick-tonight]", view).forEach((b) => b.addEventListener("click", async () => {
+    mw.tonight = Number(b.dataset.pickTonight);
+    await DB.put("mealweek", mw);
+    await DB.put("kv", { key: "dinner:" + date, value: mw.meals[mw.tonight].name });
+    RENDER.today();
+  }));
+  const tonightChange = $("#tonightChange");
+  if (tonightChange) tonightChange.addEventListener("click", async () => {
+    mw.tonight = null;
+    await DB.put("mealweek", mw);
+    RENDER.today();
+  });
   $("#mealAdd").addEventListener("click", async () => {
     const text = $("#mealIn").value.trim();
     if (!text) return;
@@ -338,10 +418,10 @@ RENDER.today = async function () {
 };
 
 function tonightMeal(mw) {
+  // Only what Anthony actually picked — never assume an order.
   if (!mw || !mw.meals || !mw.meals.length) return null;
   if (mw.tonight != null && mw.meals[mw.tonight]) return mw.meals[mw.tonight].name;
-  const next = mw.meals.find((m) => !m.cooked);
-  return next ? next.name : null;
+  return null;
 }
 
 /* ---------- weekly review ---------- */
@@ -956,6 +1036,13 @@ async function openSettings() {
       </div>
     </details>
 
+    <details class="settings-group">
+      <summary>Nudges</summary>
+      <p class="hint" style="margin:6px 0">Three quiet daily notifications: morning (session + breakfast), lunch anchor, dinner window. Needs the home-screen app and a sync token with read-and-write Contents access.</p>
+      <p class="hint" style="margin:6px 0">${("Notification" in window) ? "Permission: " + Notification.permission : "Not supported in this browser"}</p>
+      <button class="btn secondary" id="sNotif">Enable on this device</button>
+    </details>
+
     <details class="settings-group" open>
       <summary>Goal</summary>
       <div class="row"><div>
@@ -1013,6 +1100,10 @@ async function openSettings() {
     </div>`);
 
   $("#sheetClose", sheet).addEventListener("click", closeSheet);
+  $("#sNotif", sheet).addEventListener("click", async () => {
+    saveSyncConfig({ owner: $("#syOwner").value.trim(), repo: $("#syRepo").value.trim(), pat: $("#syPat").value.trim() });
+    await enableNotifications();
+  });
   $("#sySyncNow", sheet).addEventListener("click", async () => {
     saveSyncConfig({ owner: $("#syOwner").value.trim(), repo: $("#syRepo").value.trim(), pat: $("#syPat").value.trim() });
     await syncNow();
@@ -1089,6 +1180,7 @@ async function importGarminWeights(file) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
   syncNow(true).catch(() => {}); // background refresh; quiet on failure
+  refreshPushSubscription();
 })();
 
 /* Re-sync when the installed app wakes from the background (>30 min old). */
