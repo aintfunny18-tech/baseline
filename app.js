@@ -217,6 +217,7 @@ RENDER.today = async function () {
   const mw = await DB.get("mealweek", weekMonday());
   const tonight = tonightMeal(mw);
   const lastDinner = await DB.get("kv", "dinner:" + addDays(date, -1));
+  const mealsLogged = (await DB.all("meallog")).filter((m) => m.date === date);
   const plan = weekPlan();
   const todaySlot = plan.find((p) => p.day === dowIndex(date));
   const dow = dowIndex(date);
@@ -273,8 +274,14 @@ RENDER.today = async function () {
     <h2>Meals today</h2>
     ${lastDinner ? `<p style="margin:4px 0">Lunch: leftovers — ${esc(lastDinner.value)}</p>` : ""}
     ${tonight
-      ? `<p style="margin:4px 0">Tonight: <strong>${esc(tonight)}</strong></p><p class="hint">From this week's meal plan — Meals tab to change.</p>`
+      ? `<p style="margin:4px 0">Tonight: <strong>${esc(tonight)}</strong></p>`
       : `<p class="hint" style="margin-top:4px">No meal week loaded. It arrives with sync, or paste one in the Meals tab.</p>`}
+    ${mealsLogged.map((m) => `<p style="margin:4px 0" class="quiet">${esc(m.slot)}: ${esc(m.text)}
+      <button class="btn subtle fit" data-del-meal="${m.id}" style="padding:2px 8px; font-size:12px">×</button></p>`).join("")}
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="mealIn" placeholder="Anything else — breakfast, eating out…">
+      <button class="btn secondary fit" id="mealAdd">Add</button>
+    </div>
   </div>
 
   <div class="card">
@@ -308,6 +315,18 @@ RENDER.today = async function () {
     $("#winIn").value = "";
     toast("Win logged");
   });
+  $("#mealAdd").addEventListener("click", async () => {
+    const text = $("#mealIn").value.trim();
+    if (!text) return;
+    const hr = new Date().getHours();
+    const slot = hr < 10.5 ? "Breakfast" : hr < 15 ? "Lunch" : hr < 21 ? "Dinner" : "Late";
+    await DB.put("meallog", { date, slot, text });
+    RENDER.today();
+  });
+  $$("[data-del-meal]", view).forEach((b) => b.addEventListener("click", async () => {
+    await DB.del("meallog", Number(b.dataset.delMeal));
+    RENDER.today();
+  }));
   $("#stepsEnter").addEventListener("click", async () => {
     const v = prompt("Steps today (from the watch or Garmin app):");
     const n = parseInt(v, 10);
@@ -439,7 +458,17 @@ function openLibDetail(id) {
         <ul>${ph.details.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>
         ${ph.timer ? `<button class="btn secondary" data-phase-timer="${i}">Start this as a timer</button>` : ""}
       </div>`).join("") : ""}
-    ${x.exercises && x.exercises.length ? `<ul>${x.exercises.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
+    ${x.exercises && x.exercises.length ? x.exercises.map((e) => {
+      const name = e.split(" — ")[0];
+      const guide = EXERCISE_GUIDE[name];
+      if (!guide) return `<div style="padding:8px 4px; border-bottom:1px solid var(--border); font-size:14.5px">${esc(e)}</div>`;
+      return `<details style="border-bottom:1px solid var(--border); padding:4px 0">
+        <summary style="font-size:14.5px; color:var(--ink); padding:6px 4px">${esc(e)} <span class="quiet" style="font-size:12.5px">· how-to</span></summary>
+        ${guide.what ? `<p class="hint" style="margin:4px 0 6px">${esc(guide.what)}</p>` : ""}
+        <ul style="margin:4px 0">${guide.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>
+        ${guide.cues ? `<ul class="quiet" style="margin:4px 0 8px">${guide.cues.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
+      </details>`;
+    }).join("") : ""}
     ${x.notes && x.notes.length ? `<ul class="quiet">${x.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
     <div class="close-row">
       <button class="btn primary" data-log-lib-sheet="${id}">Log this session</button>
@@ -732,6 +761,7 @@ RENDER.trends = async function () {
     </div>
     <canvas class="chart" id="wChart"></canvas>
     <p class="trend-note">${COPY.trendLine(rate)}
+      ${paceLine(weights, rate)}
       ${weights.length ? ` · ${weights.length.toLocaleString()} entries on record` : ""}</p>
   </div>
 
@@ -808,6 +838,19 @@ function drawStepsChart(rows) {
   ctx.fillText(fmtNice(rows[0].date), PX.l, h - 4);
   const lastLbl = fmtNice(rows[rows.length - 1].date);
   ctx.fillText(lastLbl, w - PX.r - ctx.measureText(lastLbl).width, h - 4);
+}
+
+/* Projection shown only when the trend is flat-or-down: the "am I on
+   track" math, done with real scale data rather than guessed calories. */
+function paceLine(weights, rate) {
+  if (rate === null || rate > 0.05 || weights.length < 6) return "";
+  const today = todayISO();
+  if (today >= SCHOOL_YEAR_START) return "";
+  const ma = movingAvg(weights);
+  const current = ma[ma.length - 1].ma;
+  const weeks = (new Date(SCHOOL_YEAR_START) - new Date(today)) / (7 * 864e5);
+  const projected = Math.round(current + rate * weeks);
+  return ` If this holds: about ${projected} lb by school start (Aug 17).`;
 }
 
 function cssVar(name) {
@@ -1047,3 +1090,12 @@ async function importGarminWeights(file) {
   }
   syncNow(true).catch(() => {}); // background refresh; quiet on failure
 })();
+
+/* Re-sync when the installed app wakes from the background (>30 min old). */
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible") return;
+  const last = await DB.get("kv", "lastSync");
+  if (!last || Date.now() - new Date(last.value).getTime() > 30 * 60 * 1000) {
+    syncNow(true).catch(() => {});
+  }
+});

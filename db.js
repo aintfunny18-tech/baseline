@@ -1,8 +1,8 @@
 /* Baseline — IndexedDB wrapper. Promise-based, one object per row. */
 const DB = (() => {
   const NAME = "baseline-db";
-  const VERSION = 1;
-  const STORES = ["weights", "checkins", "wins", "sessions", "mealweek", "kv"];
+  const VERSION = 2;
+  const STORES = ["weights", "checkins", "wins", "sessions", "mealweek", "meallog", "kv"];
   let dbPromise = null;
 
   function open() {
@@ -17,6 +17,7 @@ const DB = (() => {
           wins: { keyPath: "id", autoIncrement: true },
           sessions: { keyPath: "id", autoIncrement: true },
           mealweek: { keyPath: "weekOf" },
+          meallog: { keyPath: "id", autoIncrement: true },
           kv: { keyPath: "key" },
         };
         for (const [name, opts] of Object.entries(defs)) {
