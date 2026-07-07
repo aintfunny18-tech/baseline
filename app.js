@@ -277,7 +277,8 @@ RENDER.today = async function () {
   const sessionsToday = (await DB.all("sessions")).filter((s) => s.date === date);
   const stepsRow = await DB.get("kv", "steps:" + date);
   const mw = await DB.get("mealweek", weekMonday());
-  const tonight = tonightMeal(mw);
+  const dinnerToday = await DB.get("kv", "dinner:" + date);
+  const tonight = dinnerToday ? dinnerToday.value : tonightMeal(mw);
   const lastDinner = await DB.get("kv", "dinner:" + addDays(date, -1));
   const mealsLogged = (await DB.all("meallog")).filter((m) => m.date === date);
   const plan = weekPlan();
@@ -338,12 +339,12 @@ RENDER.today = async function () {
     ${tonight
       ? `<p style="margin:4px 0">Tonight: <strong>${esc(tonight)}</strong>
            <button class="btn subtle fit" id="tonightChange" style="padding:2px 10px; font-size:12px">change</button></p>`
-      : mw && mw.meals.length
-        ? `<div class="chip-row"><span class="lbl">Which dinner tonight?</span>
-             ${mw.meals.map((m, i) => m.cooked ? "" :
-               `<button class="chip small" data-pick-tonight="${i}">${esc(m.name.length > 42 ? m.name.slice(0, 40) + "…" : m.name)}</button>`).join("")}
-           </div>`
-        : `<p class="hint" style="margin-top:4px">No meal week loaded. It arrives with sync, or paste one in the Meals tab.</p>`}
+      : `<div class="chip-row"><span class="lbl">Which dinner tonight?</span>
+           ${mw && mw.meals.length ? mw.meals.map((m, i) => m.cooked ? "" :
+             `<button class="chip small" data-pick-tonight="${i}">${esc(m.name.length > 42 ? m.name.slice(0, 40) + "…" : m.name)}</button>`).join("") : ""}
+           <button class="chip small" id="tonightOther">Other…</button>
+         </div>
+         ${mw && mw.meals.length ? "" : `<p class="hint">Meal week arrives with sync, or paste one in the Meals tab.</p>`}`}
     ${mealsLogged.map((m) => `<p style="margin:4px 0" class="quiet">${esc(m.slot)}: ${esc(m.text)}
       <button class="btn subtle fit" data-del-meal="${m.id}" style="padding:2px 8px; font-size:12px">×</button></p>`).join("")}
     <div class="row" style="margin-top:10px">
@@ -389,10 +390,18 @@ RENDER.today = async function () {
     await DB.put("kv", { key: "dinner:" + date, value: mw.meals[mw.tonight].name });
     RENDER.today();
   }));
+  const tonightOther = $("#tonightOther");
+  if (tonightOther) tonightOther.addEventListener("click", async () => {
+    const text = prompt("What's for dinner tonight? (an audible or eating out counts the same)");
+    if (!text || !text.trim()) return;
+    await DB.put("kv", { key: "dinner:" + date, value: text.trim() });
+    if (mw) { mw.tonight = null; await DB.put("mealweek", mw); }
+    RENDER.today();
+  });
   const tonightChange = $("#tonightChange");
   if (tonightChange) tonightChange.addEventListener("click", async () => {
-    mw.tonight = null;
-    await DB.put("mealweek", mw);
+    await DB.del("kv", "dinner:" + date);
+    if (mw) { mw.tonight = null; await DB.put("mealweek", mw); }
     RENDER.today();
   });
   $("#mealAdd").addEventListener("click", async () => {
