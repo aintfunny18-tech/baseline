@@ -331,6 +331,7 @@ RENDER.today = async function () {
       <button class="btn primary fit" data-log-lib="${todaySlot.id}">Log it</button>
     </div>
     ${sessionsToday.length ? `<p class="hint">Logged today: ${sessionsToday.map((s) => `${esc(LIBRARY[s.kind] ? LIBRARY[s.kind].name : s.kind)} (${s.minutes} min)`).join(", ")}</p>` : ""}
+    <button class="btn subtle" id="logOther" style="margin-top:8px">Did something else? Log it</button>
   </div>` : ""}
 
   <div class="card">
@@ -429,9 +430,43 @@ RENDER.today = async function () {
     if (n > 0) { await DB.put("kv", { key: "steps:" + date, value: n }); RENDER.today(); }
   });
   wireLibButtons(view);
+  const logOther = $("#logOther");
+  if (logOther) logOther.addEventListener("click", openLogOther);
 
   if (showReview) renderReviewCard();
 };
+
+/* Log whatever actually happened — the plan is a suggestion, the log is truth. */
+function openLogOther() {
+  const sheet = openSheet(`
+    <h2>Log a session</h2>
+    <p class="hint" style="margin-top:0">Whatever you actually did counts the same as the plan.</p>
+    ${Object.entries(LIBRARY).map(([id, x]) =>
+      `<div class="lib-item" data-log-pick="${id}"><span>${esc(x.name)}</span><span class="mins">~${x.minutes} min</span></div>`).join("")}
+    <div class="row" style="margin-top:14px">
+      <input type="text" id="otherAct" placeholder="Something else — kayaking, mowing, dancing…">
+      <input type="number" id="otherMin" inputmode="numeric" value="30" min="1" max="600" style="max-width:92px">
+    </div>
+    <p class="hint" style="margin:4px 0 0">Name and minutes, then log.</p>
+    <div class="close-row">
+      <button class="btn primary" id="otherLog">Log it</button>
+      <button class="btn subtle" id="sheetClose" style="margin-left:8px">Cancel</button>
+    </div>`);
+  $("#sheetClose", sheet).addEventListener("click", closeSheet);
+  $$("[data-log-pick]", sheet).forEach((el) => el.addEventListener("click", () => {
+    closeSheet();
+    openLogSession(el.dataset.logPick);
+  }));
+  $("#otherLog", sheet).addEventListener("click", async () => {
+    const text = $("#otherAct").value.trim();
+    if (!text) { toast("Name the activity first"); return; }
+    const minutes = parseInt($("#otherMin").value, 10) || 30;
+    await DB.put("sessions", { date: todayISO(), kind: text, minutes });
+    closeSheet();
+    toast("Session logged");
+    if (activeTab === "today") RENDER.today();
+  });
+}
 
 function defaultMealSlot() {
   const hr = new Date().getHours() + new Date().getMinutes() / 60;
