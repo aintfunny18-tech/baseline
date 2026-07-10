@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS = {
   stepStart: 5500,
   stepRampPerWeek: 250,
   stepCap: 8500,
+  gameMode: true,
   firstUse: null,
 };
 let SETTINGS = { ...DEFAULT_SETTINGS };
@@ -111,6 +112,149 @@ function trendPerWeek(rows) {
   const days = (new Date(last.date) - new Date(prev.date)) / 864e5;
   if (days < 4 || days > 21) return null;
   return (last.ma - prev.ma) / days * 7;
+}
+
+/* ---------- momentum game ----------
+   Points reward attention and follow-through, never a particular food choice,
+   weight, or check-in answer. Everything is derived from the existing log. */
+const LEVEL_SIZE = 80;
+const LEVEL_NAMES = [
+  "On the board",
+  "Finding rhythm",
+  "Building range",
+  "Steady operator",
+  "In motion",
+];
+
+function levelName(level) {
+  return LEVEL_NAMES[level - 1] || `Momentum ${level}`;
+}
+
+function gameDay(map, date) {
+  if (!map[date]) map[date] = { date, points: 0, reasons: [] };
+  return map[date];
+}
+
+function addGamePoints(map, date, points, reason) {
+  if (!date || date < SETTINGS.firstUse) return;
+  const day = gameDay(map, date);
+  day.points += points;
+  day.reasons.push({ points, reason });
+}
+
+async function gameSnapshot(date = todayISO()) {
+  const [checkins, sessions, meals, weights, wins, kv] = await Promise.all([
+    DB.all("checkins"), DB.all("sessions"), DB.all("meallog"),
+    DB.all("weights"), DB.all("wins"), DB.all("kv"),
+  ]);
+  const days = {};
+
+  checkins.forEach((c) => {
+    const fields = [c.meals, c.dinner, c.movement].filter(Boolean).length;
+    if (fields) addGamePoints(days, c.date, fields * 4, "honest check-in");
+  });
+
+  const sessionDates = new Set();
+  sessions.forEach((s) => sessionDates.add(s.date));
+  sessionDates.forEach((d) => addGamePoints(days, d, 15, "intentional movement"));
+
+  const mealSlots = {};
+  meals.forEach((m) => {
+    if (!mealSlots[m.date]) mealSlots[m.date] = new Set();
+    mealSlots[m.date].add(m.slot);
+  });
+  Object.entries(mealSlots).forEach(([d, slots]) =>
+    addGamePoints(days, d, Math.min(8, slots.size * 2), "meal awareness"));
+
+  const weightDates = new Set(weights.map((w) => w.date));
+  weightDates.forEach((d) => addGamePoints(days, d, 3, "trend check"));
+
+  const winDates = new Set(wins.map((w) => w.date));
+  winDates.forEach((d) => addGamePoints(days, d, 4, "win noticed"));
+
+  const dinnerDates = new Set();
+  const stepGoalDates = new Set();
+  const pauseDates = new Set();
+  kv.forEach((row) => {
+    if (row.key.startsWith("dinner:")) {
+      const d = row.key.slice(7);
+      dinnerDates.add(d);
+      addGamePoints(days, d, 5, "dinner decided");
+    } else if (row.key.startsWith("steps:")) {
+      const d = row.key.slice(6);
+      if (Number(row.value) >= stepGoal(d)) {
+        stepGoalDates.add(d);
+        addGamePoints(days, d, 10, "step target");
+      }
+    } else if (row.key.startsWith("quest:") && row.key.endsWith(":pause") && row.value) {
+      const d = row.key.slice(6, -6);
+      pauseDates.add(d);
+      addGamePoints(days, d, 8, "mindful pause");
+    }
+  });
+
+  const orderedDays = Object.values(days).sort((a, b) => a.date.localeCompare(b.date));
+  const total = orderedDays.reduce((sum, d) => sum + d.points, 0);
+  const level = Math.floor(total / LEVEL_SIZE) + 1;
+  const levelPoints = total % LEVEL_SIZE;
+  const todayPoints = days[date] ? days[date].points : 0;
+  const quests = [
+    {
+      id: "dinner",
+      title: "Decide dinner",
+      text: "Make the later choice easier now.",
+      done: dinnerDates.has(date),
+      points: 5,
+    },
+    {
+      id: "move",
+      title: "Move with intention",
+      text: "A planned session or your step target counts.",
+      done: sessionDates.has(date) || stepGoalDates.has(date),
+      points: 15,
+    },
+    {
+      id: "pause",
+      title: "Take one pause",
+      text: "Before seconds, breathe and check whether you are still hungry.",
+      done: pauseDates.has(date),
+      points: 8,
+    },
+  ];
+
+  const weekStart = weekMonday(date);
+  const thisWeek = (set) => [...set].filter((d) => d >= weekStart && d <= addDays(weekStart, 6)).length;
+  const checkedDates = new Set(checkins.filter((c) => c.meals || c.dinner || c.movement).map((c) => c.date));
+  const movementDates = new Set([...sessionDates, ...stepGoalDates]);
+  const checkinWeeks = {};
+  checkedDates.forEach((d) => {
+    const wk = weekMonday(d);
+    checkinWeeks[wk] = (checkinWeeks[wk] || 0) + 1;
+  });
+  const achievements = [
+    { name: "On the board", note: "Complete one check-in", unlocked: checkedDates.size >= 1 },
+    { name: "Mindful rep", note: "Take a mindful pause", unlocked: pauseDates.size >= 1 },
+    { name: "Dinner ahead", note: "Decide dinner on 3 days", unlocked: dinnerDates.size >= 3 },
+    { name: "Three-day pattern", note: "Move intentionally on 3 days", unlocked: movementDates.size >= 3 },
+    { name: "Weekend switch", note: "Log movement on Saturday or Sunday", unlocked: [...movementDates].some((d) => dowIndex(d) >= 5) },
+    { name: "Anchor week", note: "Check in on 5 days in one week", unlocked: Object.values(checkinWeeks).some((n) => n >= 5) },
+  ];
+
+  return {
+    total, level, levelPoints, todayPoints, days, quests, achievements,
+    week: {
+      checkins: thisWeek(checkedDates),
+      movement: thisWeek(movementDates),
+      dinners: thisWeek(dinnerDates),
+    },
+  };
+}
+
+function progressBar(value, max, label) {
+  const pct = Math.max(0, Math.min(100, value / max * 100));
+  return `<div class="progress-track" role="progressbar" aria-label="${esc(label)}" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${Math.min(value, max)}">
+    <span style="width:${pct}%"></span>
+  </div>`;
 }
 
 /* ---------- sync (private data repo) ---------- */
@@ -285,12 +429,45 @@ RENDER.today = async function () {
   const todaySlot = plan.find((p) => p.day === dowIndex(date));
   const dow = dowIndex(date);
   const showReview = dow === 6 || dow === 0; // Sun or Mon
+  const game = SETTINGS.gameMode ? await gameSnapshot(date) : null;
 
   const chip = (name, val, cur) =>
     `<button class="chip ${cur === val ? "on" : ""}" data-ci="${name}" data-val="${val}">${val}</button>`;
 
   view.innerHTML = `
   ${showReview ? `<div id="reviewCard"></div>` : ""}
+
+  ${game ? `
+  <section class="momentum-hero" aria-labelledby="momentumTitle">
+    <div class="momentum-main">
+      <div class="level-orb" style="--level-progress:${game.levelPoints / LEVEL_SIZE * 360}deg">
+        <span>LV</span><strong>${game.level}</strong>
+      </div>
+      <div class="momentum-copy">
+        <p class="eyebrow">Today's momentum</p>
+        <h2 id="momentumTitle">${esc(levelName(game.level))}</h2>
+        <p>${game.todayPoints} points today <span aria-hidden="true">·</span> ${LEVEL_SIZE - game.levelPoints} to level ${game.level + 1}</p>
+      </div>
+      <div class="point-badge">${game.total}<span>total</span></div>
+    </div>
+    ${progressBar(game.levelPoints, LEVEL_SIZE, `Level ${game.level} progress`)}
+    <div class="quest-head">
+      <div><strong>Daily quest</strong><span>${game.quests.filter((q) => q.done).length} of ${game.quests.length} complete</span></div>
+      <span class="quest-points">showing up earns points</span>
+    </div>
+    <div class="quest-list">
+      ${game.quests.map((q) => `
+        <article class="quest ${q.done ? "done" : ""}">
+          <span class="quest-mark" aria-hidden="true">${q.done ? "✓" : "+" + q.points}</span>
+          <div><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span></div>
+          ${q.done ? `<span class="quest-state">done</span>` :
+            q.id === "pause" ? `<button class="quest-action" data-quest-pause>Mark pause</button>` :
+            q.id === "move" ? `<button class="quest-action" data-quest-move>Open</button>` :
+            `<button class="quest-action" data-quest-dinner>Choose</button>`}
+        </article>`).join("")}
+    </div>
+    <p class="game-rule">Points reward noticing, planning, and logging. They never rank a meal or a number on the scale.</p>
+  </section>` : ""}
 
   <div class="card">
     <h2>Weight <span class="sub">lb</span></h2>
@@ -305,7 +482,7 @@ RENDER.today = async function () {
     </p>
   </div>
 
-  <div class="card">
+  <div class="card" id="checkinCard">
     <h2>Check-in <span class="sub">a few taps, done</span></h2>
     <div class="chip-row"><span class="lbl">Meals today</span>
       ${chip("meals", "Regular", checkin.meals)}${chip("meals", "Mixed", checkin.meals)}${chip("meals", "Off", checkin.meals)}
@@ -323,7 +500,7 @@ RENDER.today = async function () {
   </div>
 
   ${todaySlot ? `
-  <div class="card">
+  <div class="card" id="sessionCard">
     <h2>Today's session <span class="sub">${todaySlot.time}${todaySlot.optional ? " · optional" : ""}</span></h2>
     <div class="row">
       <div>${esc(LIBRARY[todaySlot.id].name)}</div>
@@ -334,7 +511,7 @@ RENDER.today = async function () {
     <button class="btn subtle" id="logOther" style="margin-top:8px">Did something else? Log it</button>
   </div>` : ""}
 
-  <div class="card">
+  <div class="card" id="mealCard">
     <h2>Meals today</h2>
     ${lastDinner ? `<p style="margin:4px 0">Lunch: leftovers — ${esc(lastDinner.value)}</p>` : ""}
     ${tonight
@@ -368,18 +545,36 @@ RENDER.today = async function () {
   </div>`;
 
   // events
+  const pauseQuest = $("[data-quest-pause]", view);
+  if (pauseQuest) pauseQuest.addEventListener("click", async () => {
+    await DB.put("kv", { key: `quest:${date}:pause`, value: true });
+    toast("Mindful pause · +8 momentum");
+    RENDER.today();
+  });
+  const dinnerQuest = $("[data-quest-dinner]", view);
+  if (dinnerQuest) dinnerQuest.addEventListener("click", () => {
+    $("#mealCard", view).scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  const moveQuest = $("[data-quest-move]", view);
+  if (moveQuest) moveQuest.addEventListener("click", () => {
+    const target = $("#sessionCard", view);
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    else openLogOther();
+  });
   $("#wSave").addEventListener("click", async () => {
     const v = parseFloat($("#wIn").value);
     if (!v || v < 80 || v > 500) { toast("Enter a weight first"); return; }
     await DB.put("weights", { date, lbs: Math.round(v * 10) / 10, source: "manual" });
-    toast("Saved");
+    toast("Trend check saved · +3 momentum");
     RENDER.today();
   });
   $$("[data-ci]", view).forEach((b) => b.addEventListener("click", async () => {
     const existing = (await DB.get("checkins", date)) || { date };
     const key = b.dataset.ci;
+    const firstAnswer = !existing[key];
     existing[key] = existing[key] === b.dataset.val ? undefined : b.dataset.val;
     await DB.put("checkins", existing);
+    if (firstAnswer && existing[key]) toast("Check-in noted · +4 momentum");
     RENDER.today();
   }));
   $("#winSave").addEventListener("click", async () => {
@@ -387,12 +582,13 @@ RENDER.today = async function () {
     if (!text) return;
     await DB.put("wins", { date, text });
     $("#winIn").value = "";
-    toast("Win logged");
+    toast("Win noticed · +4 momentum");
   });
   $$("[data-pick-tonight]", view).forEach((b) => b.addEventListener("click", async () => {
     mw.tonight = Number(b.dataset.pickTonight);
     await DB.put("mealweek", mw);
     await DB.put("kv", { key: "dinner:" + date, value: mw.meals[mw.tonight].name });
+    toast("Dinner decided · +5 momentum");
     RENDER.today();
   }));
   const tonightOther = $("#tonightOther");
@@ -401,6 +597,7 @@ RENDER.today = async function () {
     if (!text || !text.trim()) return;
     await DB.put("kv", { key: "dinner:" + date, value: text.trim() });
     if (mw) { mw.tonight = null; await DB.put("mealweek", mw); }
+    toast("Dinner decided · +5 momentum");
     RENDER.today();
   });
   const tonightChange = $("#tonightChange");
@@ -418,6 +615,7 @@ RENDER.today = async function () {
     const text = $("#mealIn").value.trim();
     if (!text) return;
     await DB.put("meallog", { date, slot: mealSlot, text });
+    toast("Meal noted · +2 momentum");
     RENDER.today();
   });
   $$("[data-del-meal]", view).forEach((b) => b.addEventListener("click", async () => {
@@ -463,7 +661,7 @@ function openLogOther() {
     const minutes = parseInt($("#otherMin").value, 10) || 30;
     await DB.put("sessions", { date: todayISO(), kind: text, minutes });
     closeSheet();
-    toast("Session logged");
+    toast("Movement logged · +15 momentum");
     if (activeTab === "today") RENDER.today();
   });
 }
@@ -643,7 +841,7 @@ function openLogSession(id) {
     const minutes = parseInt($("#logMin").value, 10) || x.minutes;
     await DB.put("sessions", { date: todayISO(), kind: id, minutes });
     closeSheet();
-    toast("Session logged");
+    toast("Movement logged · +15 momentum");
     if (activeTab === "today") RENDER.today();
   });
 }
@@ -763,7 +961,7 @@ function finishTimer() {
   $("#tLog", sheet).addEventListener("click", async () => {
     await DB.put("sessions", { date: todayISO(), kind: kind || "intervals", minutes });
     closeSheet();
-    toast("Session logged");
+    toast("Movement logged · +15 momentum");
     if (activeTab === "today") RENDER.today();
   });
 }
@@ -847,7 +1045,7 @@ RENDER.meals = async function () {
     mw.tonight = Number(b.dataset.tonight);
     await DB.put("mealweek", mw);
     await DB.put("kv", { key: "dinner:" + todayISO(), value: mw.meals[mw.tonight].name });
-    toast("Tonight set");
+    toast("Dinner decided · +5 momentum");
     RENDER.meals();
   }));
 };
@@ -891,8 +1089,45 @@ RENDER.trends = async function () {
   const within = (d, days) => d >= addDays(now, -days + 1);
   const c7 = checkins.filter((c) => within(c.date, 7) && (c.meals || c.dinner || c.movement)).length;
   const c28 = checkins.filter((c) => within(c.date, 28) && (c.meals || c.dinner || c.movement)).length;
+  const game = SETTINGS.gameMode ? await gameSnapshot(now) : null;
+  const recentGameDays = Array.from({ length: 7 }, (_, i) => addDays(now, i - 6));
 
   view.innerHTML = `
+  ${game ? `
+  <div class="card game-card">
+    <div class="game-card-head">
+      <div>
+        <p class="eyebrow">Momentum</p>
+        <h2>Level ${game.level} <span class="sub">${esc(levelName(game.level))}</span></h2>
+      </div>
+      <strong class="game-total">${game.total}<span>points</span></strong>
+    </div>
+    ${progressBar(game.levelPoints, LEVEL_SIZE, `Level ${game.level} progress`)}
+    <div class="seven-day" aria-label="Momentum points for the last seven days">
+      ${recentGameDays.map((d) => {
+        const pts = game.days[d] ? game.days[d].points : 0;
+        return `<div class="day-pip ${pts ? "active" : ""}"><span>${DOW[dowIndex(d)].slice(0, 1)}</span><i style="--pip:${Math.max(12, Math.min(100, pts / 45 * 100))}%"></i><strong>${pts}</strong></div>`;
+      }).join("")}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>This week's campaign <span class="sub">small targets, all independent</span></h2>
+    <div class="campaign-row"><div><strong>Check in</strong><span>${game.week.checkins} / 5 days</span></div>${progressBar(game.week.checkins, 5, "Weekly check-ins")}</div>
+    <div class="campaign-row"><div><strong>Move intentionally</strong><span>${game.week.movement} / 3 days</span></div>${progressBar(game.week.movement, 3, "Weekly movement")}</div>
+    <div class="campaign-row"><div><strong>Decide dinner</strong><span>${game.week.dinners} / 4 days</span></div>${progressBar(game.week.dinners, 4, "Weekly dinner decisions")}</div>
+  </div>
+
+  <div class="card">
+    <h2>Milestones <span class="sub">${game.achievements.filter((a) => a.unlocked).length} unlocked</span></h2>
+    <div class="badge-grid">
+      ${game.achievements.map((a) => `<div class="badge-tile ${a.unlocked ? "unlocked" : ""}">
+        <span class="badge-icon" aria-hidden="true">${a.unlocked ? "◆" : "◇"}</span>
+        <strong>${esc(a.name)}</strong><span>${esc(a.note)}</span>
+      </div>`).join("")}
+    </div>
+  </div>` : ""}
+
   <div class="card">
     <h2>Weight</h2>
     <div class="chip-row">
@@ -914,7 +1149,7 @@ RENDER.trends = async function () {
   <div class="card">
     <h2>Wins</h2>
     ${wins.length ? wins.map((w) => `<div class="win-row"><span class="d">${fmtNice(w.date)}</span>${esc(w.text)}</div>`).join("")
-      : `<p class="hint" style="margin-top:0">Log the first one from the Today tab. Non-scale wins count double here.</p>`}
+      : `<p class="hint" style="margin-top:0">Log the first one from the Today tab. Small wins stay visible here.</p>`}
   </div>
 
   <div class="card">
@@ -1111,6 +1346,14 @@ async function openSettings() {
       </div></div>
     </details>
 
+    <details class="settings-group" open>
+      <summary>Momentum game</summary>
+      <label class="row" style="align-items:center">
+        <input type="checkbox" id="sGame" ${SETTINGS.gameMode ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto;accent-color:var(--accent)">
+        <span><strong>Show levels, daily quests, and milestones</strong><br><span class="hint">Points reward interaction and follow-through. Food choices and scale results are never scored.</span></span>
+      </label>
+    </details>
+
     <details class="settings-group">
       <summary>Meal anchors</summary>
       <div class="row">
@@ -1177,6 +1420,7 @@ async function openSettings() {
     SETTINGS.stepRampPerWeek = parseInt($("#sStepRamp").value, 10) || 0;
     SETTINGS.stepCap = parseInt($("#sStepCap").value, 10) || SETTINGS.stepCap;
     SETTINGS.streaksOptIn = $("#sStreaks").checked;
+    SETTINGS.gameMode = $("#sGame").checked;
     await saveSettings();
     closeSheet();
     toast("Saved");

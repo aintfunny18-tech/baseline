@@ -1,30 +1,41 @@
 /* Baseline — visual system shared with the intake questionnaire. */
 :root {
-  --bg: #faf7f2;
+  --bg: #f6f3ea;
   --card: #ffffff;
-  --ink: #2d2a26;
-  --muted: #7a736a;
-  --accent: #2f7d5f;
-  --accent-soft: #e7f2ec;
-  --border: #e5dfd6;
-  --radius: 14px;
+  --ink: #192820;
+  --muted: #6e786f;
+  --accent: #167052;
+  --accent-deep: #0e4939;
+  --accent-soft: #e2f2e9;
+  --gold: #d7a838;
+  --gold-soft: #fff4cf;
+  --border: #dfe5dd;
+  --radius: 16px;
+  --shadow: 0 8px 28px rgba(35, 56, 45, .07);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1a17;
-    --card: #262320;
-    --ink: #ede8e0;
-    --muted: #a39a8e;
-    --accent: #6fbf9a;
-    --accent-soft: #2b3d35;
-    --border: #3a352f;
+    --bg: #101813;
+    --card: #19231d;
+    --ink: #edf3ed;
+    --muted: #9eaaa1;
+    --accent: #71d0a7;
+    --accent-deep: #a4e5c8;
+    --accent-soft: #203b30;
+    --gold: #efc55c;
+    --gold-soft: #3b321c;
+    --border: #324139;
+    --shadow: 0 8px 28px rgba(0, 0, 0, .2);
   }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 12% -10%, rgba(215, 168, 56, .12), transparent 28rem),
+    radial-gradient(circle at 95% 5%, rgba(22, 112, 82, .12), transparent 24rem),
+    var(--bg);
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;
@@ -34,7 +45,9 @@ body {
 
 header.appbar {
   position: sticky; top: 0; z-index: 20;
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
   padding-top: env(safe-area-inset-top);
 }
@@ -43,7 +56,8 @@ header.appbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px;
 }
-.appbar-row h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.appbar-row h1 { font-size: 17px; margin: 0; font-weight: 720; display: flex; align-items: center; gap: 8px; letter-spacing: -.01em; }
+.brand-mark { width: 10px; height: 10px; border-radius: 3px; background: linear-gradient(135deg, var(--gold), var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft); transform: rotate(12deg); }
 .appbar-row .date { color: var(--muted); font-size: 13.5px; }
 .gear {
   background: none; border: none; color: var(--muted);
@@ -63,6 +77,7 @@ main {
   border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 14px;
+  box-shadow: var(--shadow);
 }
 .card h2 { font-size: 15px; margin: 0 0 10px; font-weight: 650; }
 .card h2 .sub { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
@@ -119,6 +134,84 @@ button.btn {
 .weight-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .weight-line .big { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
 .trend-note { font-size: 13.5px; color: var(--muted); }
+
+/* momentum game */
+.momentum-hero {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(255, 226, 143, .24), transparent 13rem),
+    linear-gradient(145deg, #0d4938, #167052 72%, #2b8767);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 22px;
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 16px 38px rgba(14, 73, 57, .2);
+}
+.momentum-main { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 13px; }
+.level-orb {
+  width: 64px; height: 64px; border-radius: 50%; padding: 5px;
+  display: grid; place-items: center; position: relative;
+  background: conic-gradient(var(--gold) var(--level-progress), rgba(255,255,255,.17) 0);
+}
+.level-orb::after { content: ""; position: absolute; inset: 6px; border-radius: inherit; background: #155b47; }
+.level-orb span, .level-orb strong { position: relative; z-index: 1; grid-area: 1/1; }
+.level-orb span { font-size: 9px; letter-spacing: .12em; transform: translateY(-10px); opacity: .75; }
+.level-orb strong { font-size: 24px; transform: translateY(5px); }
+.eyebrow { margin: 0 0 2px; text-transform: uppercase; letter-spacing: .12em; font-size: 10.5px; font-weight: 750; opacity: .7; }
+.momentum-copy h2 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
+.momentum-copy p:last-child { margin: 3px 0 0; font-size: 12.5px; color: rgba(255,255,255,.7); }
+.point-badge { font-size: 20px; font-weight: 760; text-align: right; }
+.point-badge span { display: block; font-size: 9px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; opacity: .65; }
+.progress-track { height: 7px; background: color-mix(in srgb, var(--border) 72%, transparent); border-radius: 99px; overflow: hidden; }
+.progress-track span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 68%, var(--gold))); border-radius: inherit; transition: width .35s ease; }
+.momentum-hero > .progress-track { margin: 14px 0 16px; background: rgba(255,255,255,.15); }
+.momentum-hero > .progress-track span { background: linear-gradient(90deg, #f5c95e, #ffe6a1); }
+.quest-head { display: flex; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 8px; }
+.quest-head div { display: flex; align-items: baseline; gap: 8px; }
+.quest-head strong { font-size: 13.5px; }
+.quest-head span { font-size: 11px; color: rgba(255,255,255,.66); }
+.quest-points { text-transform: uppercase; letter-spacing: .06em; }
+.quest-list { display: grid; gap: 7px; }
+.quest {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center;
+  min-height: 54px; padding: 8px 9px; border-radius: 12px;
+  background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.1);
+}
+.quest.done { background: rgba(255,255,255,.055); }
+.quest-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.13); color: #ffe39a; font-size: 11px; font-weight: 800; }
+.quest.done .quest-mark { color: #fff; background: rgba(255,255,255,.18); }
+.quest div { min-width: 0; }
+.quest div strong, .quest div span { display: block; }
+.quest div strong { font-size: 13.5px; }
+.quest div span { color: rgba(255,255,255,.65); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quest-action { border: 0; border-radius: 999px; padding: 7px 10px; background: #fff; color: #12543f; font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
+.quest-state { font-size: 10.5px; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .08em; }
+.game-rule { margin: 10px 2px 0; color: rgba(255,255,255,.55); font-size: 10.5px; }
+
+.game-card { border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
+.game-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.game-card-head .eyebrow { color: var(--accent); opacity: 1; }
+.game-card-head h2 { margin: 0; font-size: 19px; }
+.game-total { color: var(--accent); font-size: 22px; text-align: right; }
+.game-total span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.seven-day { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; align-items: end; height: 92px; margin-top: 13px; }
+.day-pip { height: 100%; display: grid; grid-template-rows: 14px 1fr 15px; gap: 3px; text-align: center; color: var(--muted); font-size: 10px; }
+.day-pip i { width: 100%; height: var(--pip); max-height: 100%; align-self: end; display: block; border-radius: 7px 7px 3px 3px; background: var(--border); }
+.day-pip.active i { background: linear-gradient(180deg, var(--gold), var(--accent)); }
+.day-pip strong { font-size: 9px; font-variant-numeric: tabular-nums; }
+.campaign-row { margin-top: 14px; }
+.campaign-row > div { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+.campaign-row > div span { color: var(--muted); }
+.badge-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.badge-tile { min-height: 92px; padding: 11px; border: 1px solid var(--border); border-radius: 13px; color: var(--muted); background: color-mix(in srgb, var(--bg) 55%, var(--card)); }
+.badge-tile.unlocked { color: var(--ink); background: linear-gradient(145deg, var(--gold-soft), var(--card)); border-color: color-mix(in srgb, var(--gold) 52%, var(--border)); }
+.badge-icon { display: block; color: var(--muted); font-size: 18px; margin-bottom: 7px; }
+.badge-tile.unlocked .badge-icon { color: var(--gold); }
+.badge-tile strong, .badge-tile > span:last-child { display: block; }
+.badge-tile strong { font-size: 12.5px; }
+.badge-tile > span:last-child { font-size: 10.5px; margin-top: 2px; }
 
 /* week plan */
 .day-row {
@@ -217,3 +310,23 @@ nav.tabs {
 }
 details.settings-group { margin: 10px 0; }
 details.settings-group summary { cursor: pointer; font-weight: 600; font-size: 14.5px; padding: 6px 0; }
+
+@media (max-width: 420px) {
+  main { padding-left: 10px; padding-right: 10px; }
+  .momentum-hero { padding: 15px; border-radius: 19px; }
+  .momentum-main { grid-template-columns: auto 1fr; }
+  .point-badge { display: none; }
+  .level-orb { width: 58px; height: 58px; }
+  .momentum-copy h2 { font-size: 19px; }
+  .quest-head { align-items: baseline; }
+  .quest-head div { display: block; }
+  .quest-head div span { margin-left: 7px; }
+  .quest-points { display: none; }
+  .quest div span { max-width: 190px; }
+  .row { flex-wrap: wrap; }
+  .badge-grid { gap: 7px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
