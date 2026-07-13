@@ -125,19 +125,45 @@ const LEVEL_NAMES = [
   "Steady operator",
   "In motion",
 ];
-const SIDE_QUESTS = [
-  { id: "walk10", title: "Ten-minute outside walk", text: "Shoes on. One block is enough to start." },
-  { id: "breakfast", title: "Set up breakfast", text: "Make tomorrow morning require one fewer decision." },
-  { id: "gear", title: "Stage workout gear", text: "Put the clothes or shoes where you will see them." },
-  { id: "produce", title: "Add one plant", text: "Add fruit or vegetables to the next meal." },
-  { id: "stretch5", title: "Five-minute mobility", text: "Start with hips, calves, or the knee-care list." },
-  { id: "bedtime", title: "Set a bedtime cue", text: "Choose when screens wind down tonight." },
+const DAILY_SORTS = [
+  [["Breakfast", "OATS", "EGGS", "YOGURT"], ["Set up a walk", "ROUTE", "SHOES", "PODCAST"], ["Bedroom", "PILLOW", "SHEET", "LAMP"], ["Weather", "DRIZZLE", "BREEZE", "SUN"]],
+  [["Cooking actions", "CHOP", "ROAST", "WHISK"], ["Lower leg", "CALF", "ANKLE", "SHIN"], ["Quick reset", "WATER", "BREATH", "STRETCH"], ["In the bag", "KEYS", "WALLET", "CHARGER"]],
+  [["Shades of green", "MINT", "MOSS", "LIME"], ["Ball sports", "TENNIS", "SOCCER", "GOLF"], ["Quiet hour", "READ", "DIM", "UNPLUG"], ["Dinner prep", "THAW", "SLICE", "SEASON"]],
+  [["Pace words", "BRISK", "EASY", "STEADY"], ["Beans", "PINTO", "BLACK", "KIDNEY"], ["Before bed", "BRUSH", "CHARGE", "ALARM"], ["On a trail", "RIDGE", "CREEK", "SWITCHBACK"]],
+  [["___BOARD", "KEY", "SCORE", "SURF"], ["___WALK", "CAKE", "CAT", "MOON"], ["___BREAK", "DAY", "FAST", "HEART"], ["___LINE", "FINISH", "SHORE", "HEAD"]],
+  [["Planets", "MARS", "VENUS", "SATURN"], ["Kitchen tools", "TONGS", "LADLE", "GRATER"], ["Short walk", "BLOCK", "STAIRS", "LOOP"], ["Recovery", "SLEEP", "REST", "MOBILITY"]],
+  [["___TIME", "BED", "GAME", "LIFE"], ["___OUT", "WORK", "TAKE", "CHILL"], ["___UP", "WARM", "SET", "WAKE"], ["___DOWN", "COOL", "WIND", "SLOW"]],
+  [["At a picnic", "BLANKET", "BASKET", "ANTS"], ["Musical tempo", "LARGO", "ALLEGRO", "ADAGIO"], ["Yellow things", "LEMON", "CANARY", "GOLD"], ["On a desk", "STAPLER", "MOUSE", "NOTEPAD"]],
+  [["___BALL", "BASKET", "MEAT", "FIRE"], ["___HOUSE", "GREEN", "LIGHT", "CLUB"], ["___WORK", "HOME", "TEAM", "PAPER"], ["___FALL", "NIGHT", "RAIN", "WATER"]],
+  [["Birds", "RAVEN", "ROBIN", "HERON"], ["Spices", "CUMIN", "PAPRIKA", "NUTMEG"], ["In a gym", "BENCH", "MAT", "RACK"], ["Ocean features", "TIDE", "REEF", "CURRENT"]],
+  [["Card suits", "HEART", "SPADE", "DIAMOND"], ["31-day months", "JANUARY", "MARCH", "MAY"], ["Red things", "BRICK", "CHERRY", "RUBY"], ["Email actions", "INBOX", "DRAFT", "REPLY"]],
+  [["___ROOM", "BED", "CLASS", "MUSH"], ["___LIGHT", "DAY", "FLASH", "MOON"], ["___SIDE", "IN", "OUT", "CURB"], ["___WATER", "RAIN", "TAP", "SALT"]],
+  [["Constellations", "ORION", "LYRA", "DRACO"], ["Pasta shapes", "PENNE", "ORZO", "RIGATONI"], ["Track events", "SPRINT", "HURDLES", "RELAY"], ["Phone tools", "CAMERA", "TIMER", "NOTES"]],
+  [["SUN___", "FLOWER", "RISE", "SCREEN"], ["AIR___", "PLANE", "FRYER", "PORT"], ["SEA___", "FOOD", "SHELL", "WEED"], ["MOON___", "LIGHT", "WALK", "STONE"]],
 ];
 
-function dailySideQuestOptions(date) {
-  const seed = Number(date.replaceAll("-", "")) % SIDE_QUESTS.length;
-  return [0, 2, 4].map((offset) => SIDE_QUESTS[(seed + offset) % SIDE_QUESTS.length]);
+function dateSeed(date) {
+  return [...date].reduce((seed, char) => (seed * 31 + char.charCodeAt(0)) >>> 0, 2166136261);
 }
+
+function shuffled(values, seed) {
+  const out = [...values];
+  let state = seed || 1;
+  for (let i = out.length - 1; i > 0; i--) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    const j = state % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function dailySort(date) {
+  const raw = DAILY_SORTS[dateSeed(date) % DAILY_SORTS.length];
+  const groups = raw.map(([label, ...words]) => ({ label, words }));
+  return { groups, words: shuffled(groups.flatMap((group) => group.words), dateSeed(date)) };
+}
+
+let sortShuffleOffset = 0;
 
 function levelName(level) {
   return LEVEL_NAMES[level - 1] || `Momentum ${level}`;
@@ -156,15 +182,22 @@ function addGamePoints(map, date, points, reason) {
 }
 
 async function gameSnapshot(date = todayISO()) {
-  const [checkins, sessions, meals, weights, wins, kv] = await Promise.all([
+  const [checkins, sessions, meals, wins, kv] = await Promise.all([
     DB.all("checkins"), DB.all("sessions"), DB.all("meallog"),
-    DB.all("weights"), DB.all("wins"), DB.all("kv"),
+    DB.all("wins"), DB.all("kv"),
   ]);
   const days = {};
 
+  const checkedDates = new Set(checkins
+    .filter((c) => c.capacity || c.meals || c.dinner || c.movement)
+    .map((c) => c.date));
+  const capacityDates = new Set(checkins.filter((c) => c.capacity).map((c) => c.date));
   checkins.forEach((c) => {
-    const fields = [c.meals, c.dinner, c.movement].filter(Boolean).length;
-    if (fields) addGamePoints(days, c.date, fields * 4, "honest check-in");
+    if (c.capacity) addGamePoints(days, c.date, 4, "daily read");
+    else {
+      const legacyFields = [c.meals, c.dinner, c.movement].filter(Boolean).length;
+      if (legacyFields) addGamePoints(days, c.date, legacyFields * 4, "legacy check-in");
+    }
   });
 
   const sessionDates = new Set();
@@ -179,17 +212,14 @@ async function gameSnapshot(date = todayISO()) {
   Object.entries(mealSlots).forEach(([d, slots]) =>
     addGamePoints(days, d, Math.min(8, slots.size * 2), "meal awareness"));
 
-  const weightDates = new Set(weights.map((w) => w.date));
-  weightDates.forEach((d) => addGamePoints(days, d, 3, "trend check"));
-
   const winDates = new Set(wins.map((w) => w.date));
   winDates.forEach((d) => addGamePoints(days, d, 4, "win noticed"));
 
   const dinnerDates = new Set();
   const stepGoalDates = new Set();
   const pauseDates = new Set();
-  const sideQuestDates = new Set();
-  const sideQuestRecords = new Map();
+  const sortDates = new Set();
+  const sortRecords = new Map();
   kv.forEach((row) => {
     if (row.key.startsWith("dinner:")) {
       const d = row.key.slice(7);
@@ -201,23 +231,29 @@ async function gameSnapshot(date = todayISO()) {
         stepGoalDates.add(d);
         addGamePoints(days, d, 10, "step target");
       }
+    } else if (row.key.startsWith("sort:")) {
+      const d = row.key.slice(5);
+      sortRecords.set(d, row.value);
+      if (row.value && row.value.completedAt) {
+        sortDates.add(d);
+        addGamePoints(days, d, 12, "daily sort");
+      }
+    // Preserve points already earned under the previous side-quest system.
+    } else if (row.key.startsWith("sidequest:")) {
+      const d = row.key.slice(10);
+      if (row.value && row.value.done) {
+        addGamePoints(days, d, 8, "side quest");
+      }
     } else if (row.key.startsWith("quest:") && row.key.endsWith(":pause") && row.value) {
       const d = row.key.slice(6, -6);
       pauseDates.add(d);
       addGamePoints(days, d, 8, "mindful pause");
-    } else if (row.key.startsWith("sidequest:")) {
-      const d = row.key.slice(10);
-      sideQuestRecords.set(d, row.value);
-      if (row.value && row.value.done) {
-        sideQuestDates.add(d);
-        addGamePoints(days, d, 8, "side quest");
-      }
     }
   });
 
   const movementDates = new Set([...sessionDates, ...stepGoalDates]);
   dinnerDates.forEach((d) => {
-    if (pauseDates.has(d) && movementDates.has(d)) addGamePoints(days, d, 10, "daily quest set");
+    if ((capacityDates.has(d) || pauseDates.has(d)) && movementDates.has(d)) addGamePoints(days, d, 10, "daily set");
   });
 
   // Returning after a gap earns a small bonus. Nothing breaks or resets.
@@ -235,40 +271,13 @@ async function gameSnapshot(date = todayISO()) {
   const level = Math.floor(total / LEVEL_SIZE) + 1;
   const levelPoints = total % LEVEL_SIZE;
   const todayPoints = days[date] ? days[date].points : 0;
-  const selectedSide = sideQuestRecords.get(date) || null;
-  const selectedSideDetail = selectedSide ? SIDE_QUESTS.find((q) => q.id === selectedSide.id) : null;
   const beforeToday = activeDates.filter((d) => d < date);
   const lastBeforeToday = beforeToday[beforeToday.length - 1];
   const returnBonusEligible = !days[date] && lastBeforeToday &&
     (new Date(date) - new Date(lastBeforeToday)) / 864e5 >= 3;
   const returnBonusEarned = Boolean(days[date] && days[date].reasons.some((r) => r.reason === "return bonus"));
-  const quests = [
-    {
-      id: "dinner",
-      title: "Decide dinner",
-      text: "Make the later choice easier now.",
-      done: dinnerDates.has(date),
-      points: 5,
-    },
-    {
-      id: "move",
-      title: "Move with intention",
-      text: "A planned session or your step target counts.",
-      done: sessionDates.has(date) || stepGoalDates.has(date),
-      points: 15,
-    },
-    {
-      id: "pause",
-      title: "Take one pause",
-      text: "Before seconds, breathe and check whether you are still hungry.",
-      done: pauseDates.has(date),
-      points: 8,
-    },
-  ];
-
   const weekStart = weekMonday(date);
   const thisWeek = (set) => [...set].filter((d) => d >= weekStart && d <= addDays(weekStart, 6)).length;
-  const checkedDates = new Set(checkins.filter((c) => c.meals || c.dinner || c.movement).map((c) => c.date));
   const checkinWeeks = {};
   checkedDates.forEach((d) => {
     const wk = weekMonday(d);
@@ -276,18 +285,19 @@ async function gameSnapshot(date = todayISO()) {
   });
   const achievements = [
     { name: "On the board", note: "Complete one check-in", unlocked: checkedDates.size >= 1 },
-    { name: "Mindful rep", note: "Take a mindful pause", unlocked: pauseDates.size >= 1 },
+    { name: "Pattern finder", note: "Solve one Daily Sort", unlocked: sortDates.size >= 1 },
     { name: "Dinner ahead", note: "Decide dinner on 3 days", unlocked: dinnerDates.size >= 3 },
     { name: "Three-day pattern", note: "Move intentionally on 3 days", unlocked: movementDates.size >= 3 },
     { name: "Weekend switch", note: "Log movement on Saturday or Sunday", unlocked: [...movementDates].some((d) => dowIndex(d) >= 5) },
     { name: "Anchor week", note: "Check in on 5 days in one week", unlocked: Object.values(checkinWeeks).some((n) => n >= 5) },
-    { name: "Side path", note: "Complete one chosen side quest", unlocked: sideQuestDates.size >= 1 },
   ];
 
   return {
-    total, level, levelPoints, todayPoints, days, quests, achievements,
-    sideQuest: selectedSideDetail ? { ...selectedSideDetail, done: Boolean(selectedSide.done) } : null,
-    sideQuestOptions: dailySideQuestOptions(date),
+    total, level, levelPoints, todayPoints, days, achievements,
+    sortSolved: sortRecords.get(date) && Array.isArray(sortRecords.get(date).solved)
+      ? sortRecords.get(date).solved.length : 0,
+    sortComplete: sortDates.has(date),
+    dailySetComplete: dinnerDates.has(date) && (capacityDates.has(date) || pauseDates.has(date)) && movementDates.has(date),
     returnBonusEligible,
     returnBonusEarned,
     week: {
@@ -305,17 +315,11 @@ function progressBar(value, max, label) {
   </div>`;
 }
 
-async function updateAppBadge(game) {
-  if (!game) {
-    try { if ("clearAppBadge" in navigator) await navigator.clearAppBadge(); } catch { /* badges are optional */ }
-    return;
-  }
-  if (!("setAppBadge" in navigator)) return;
-  const remaining = game.quests.filter((q) => !q.done).length + (game.sideQuest && game.sideQuest.done ? 0 : 1);
+async function clearAppBadge() {
   try {
-    if (remaining) await navigator.setAppBadge(remaining);
-    else if ("clearAppBadge" in navigator) await navigator.clearAppBadge();
-  } catch { /* badges are optional */ }
+    if ("clearAppBadge" in navigator) await navigator.clearAppBadge();
+    else if ("setAppBadge" in navigator) await navigator.setAppBadge(0);
+  } catch { /* push notifications still work without icon badges */ }
 }
 
 /* ---------- sync (private data repo) ---------- */
@@ -401,12 +405,16 @@ async function publishEngagementSummary() {
     DB.all("kv"), DB.all("checkins"), DB.all("sessions"), DB.all("meallog"), DB.all("wins"),
   ]);
   const daily = {};
-  const day = (date) => daily[date] || (daily[date] = { date, opens: 0, checkinFields: 0, movementLogged: false, mealSlots: 0, sideQuest: false, win: false });
+  const day = (date) => daily[date] || (daily[date] = { date, opens: 0, dailyRead: false, puzzleGroups: 0, puzzleComplete: false, movementLogged: false, mealSlots: 0, win: false });
   kv.forEach((row) => {
     if (row.key.startsWith("opens:")) day(row.key.slice(6)).opens = Number(row.value && row.value.count) || 0;
-    if (row.key.startsWith("sidequest:") && row.value && row.value.done) day(row.key.slice(10)).sideQuest = true;
+    if (row.key.startsWith("sort:") && row.value) {
+      const target = day(row.key.slice(5));
+      target.puzzleGroups = Array.isArray(row.value.solved) ? row.value.solved.length : 0;
+      target.puzzleComplete = Boolean(row.value.completedAt);
+    }
   });
-  checkins.forEach((row) => { day(row.date).checkinFields = [row.meals, row.dinner, row.movement].filter(Boolean).length; });
+  checkins.forEach((row) => { day(row.date).dailyRead = Boolean(row.capacity || row.meals || row.dinner || row.movement); });
   sessions.forEach((row) => { day(row.date).movementLogged = true; });
   const slots = {};
   meals.forEach((row) => { (slots[row.date] || (slots[row.date] = new Set())).add(row.slot); });
@@ -455,7 +463,7 @@ async function syncNow(quiet = false) {
         const keep = meals.findIndex((x) => x.name === existing.meals[existing.tonight].name);
         tonight = keep >= 0 ? keep : null;
       }
-      await DB.put("mealweek", { weekOf: wk, meals, tonight });
+      await DB.put("mealweek", { weekOf: wk, meals, tonight, source: m.source || null, published: m.published || null });
       await DB.put("kv", { key: "lastMealsHash", value: hash });
       changed = true; notes.push("meal week updated");
     }
@@ -650,18 +658,45 @@ async function show(tab) {
 }
 $$(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
 
+const CAPACITY_CHOICES = [
+  { id: "low", label: "Low bandwidth", note: "Keep the floor intact" },
+  { id: "steady", label: "Steady", note: "Use the normal lane" },
+  { id: "high", label: "Ready for more", note: "Take the stretch route" },
+];
+
+function routeRecommendation(capacity, { steps, dinner, todaySlot, sessionDone }) {
+  if (!capacity) return null;
+  if (capacity === "low") {
+    if (!dinner) return { title: "Remove one later decision", text: "Choose dinner now. That is enough planning for this check-in.", target: "mealCard", button: "Choose dinner" };
+    return { title: "Protect the minimum", text: "Five minutes of mobility keeps the day from becoming all-or-nothing.", target: "move", button: "Open movement" };
+  }
+  if (todaySlot && !sessionDone) {
+    return {
+      title: capacity === "high" ? "Take the full route" : "Use the planned route",
+      text: `${LIBRARY[todaySlot.id].name} is already queued. Open it without another planning pass.`,
+      target: "sessionCard",
+      button: "Open session",
+    };
+  }
+  const gap = Math.max(0, stepGoal() - steps);
+  if (gap > 0) {
+    const minutes = capacity === "high" ? 20 : 10;
+    return { title: `${minutes}-minute roaming round`, text: `${gap.toLocaleString()} steps remain to the current target. A short loop moves the board automatically.`, target: "move", button: "Open movement" };
+  }
+  if (!dinner) return { title: "Bank the easy win", text: "The step target is handled. Decide dinner before the evening gets noisy.", target: "mealCard", button: "Choose dinner" };
+  return { title: "Set up tomorrow", text: "Steps and dinner are covered. Put shoes, breakfast, or workout gear where tomorrow-you will see it.", target: "meals", button: "Open meals" };
+}
+
 /* ============================================================
    TODAY
    ============================================================ */
 RENDER.today = async function () {
   const view = $("#view-today");
   const date = todayISO();
-  const weights = await sortedWeights();
-  const last = weights[weights.length - 1] || null;
-  const rate = trendPerWeek(weights);
   const checkin = (await DB.get("checkins", date)) || { date };
   const sessionsToday = (await DB.all("sessions")).filter((s) => s.date === date);
   const stepsRow = await DB.get("kv", "steps:" + date);
+  const steps = stepsRow ? Number(stepsRow.value) || 0 : 0;
   const mw = await DB.get("mealweek", weekMonday());
   const dinnerToday = await DB.get("kv", "dinner:" + date);
   const tonight = dinnerToday ? dinnerToday.value : tonightMeal(mw);
@@ -676,9 +711,19 @@ RENDER.today = async function () {
   const garminGenerated = await DB.get("kv", "garminGenerated");
   const garminAge = garminGenerated && garminGenerated.value ? Date.now() - new Date(garminGenerated.value).getTime() : null;
   const garminStale = garminAge !== null && garminAge > 36 * 3600e3;
-
-  const chip = (name, val, cur) =>
-    `<button class="chip ${cur === val ? "on" : ""}" data-ci="${name}" data-val="${val}">${val}</button>`;
+  const sortRow = await DB.get("kv", `sort:${date}`);
+  const sortState = sortRow && sortRow.value ? sortRow.value : { solved: [], selected: [], mistakes: 0 };
+  const sortGame = dailySort(date);
+  const solvedLabels = new Set(Array.isArray(sortState.solved) ? sortState.solved : []);
+  const selectedWords = new Set(Array.isArray(sortState.selected) ? sortState.selected : []);
+  const unsolvedWords = sortGame.words.filter((word) => !sortGame.groups.some((group) => solvedLabels.has(group.label) && group.words.includes(word)));
+  const displayWords = shuffled(unsolvedWords, dateSeed(date) + sortShuffleOffset);
+  const route = routeRecommendation(checkin.capacity, {
+    steps,
+    dinner: Boolean(dinnerToday),
+    todaySlot,
+    sessionDone: sessionsToday.length > 0,
+  });
 
   view.innerHTML = `
   ${showReview ? `<div id="reviewCard"></div>` : ""}
@@ -708,67 +753,42 @@ RENDER.today = async function () {
       <div class="point-badge">${game.total}<span>total</span></div>
     </div>
     ${progressBar(game.levelPoints, LEVEL_SIZE, `Level ${game.level} progress`)}
-    <div class="quest-head">
-      <div><strong>Daily quest</strong><span>${game.quests.filter((q) => q.done).length} of ${game.quests.length} complete</span></div>
-      <span class="quest-points">${game.quests.every((q) => q.done) ? "+10 set bonus earned" : "complete the set for +10"}</span>
-    </div>
-    <div class="quest-list">
-      ${game.quests.map((q) => `
-        <article class="quest ${q.done ? "done" : ""}">
-          <span class="quest-mark" aria-hidden="true">${q.done ? "✓" : "+" + q.points}</span>
-          <div><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span></div>
-          ${q.done ? `<span class="quest-state">done</span>` :
-            q.id === "pause" ? `<button class="quest-action" data-quest-pause>Mark pause</button>` :
-            q.id === "move" ? `<button class="quest-action" data-quest-move>Open</button>` :
-            `<button class="quest-action" data-quest-dinner>Choose</button>`}
-        </article>`).join("")}
-    </div>
-    <div class="sidequest-panel ${game.sideQuest && game.sideQuest.done ? "done" : ""}">
-      <div class="sidequest-head"><strong>Side quest</strong><span>choose one · +8</span></div>
-      ${game.sideQuest ? `<div class="sidequest-selected">
-        <div><strong>${esc(game.sideQuest.title)}</strong><span>${esc(game.sideQuest.text)}</span></div>
-        ${game.sideQuest.done
-          ? `<span class="quest-state">complete</span>`
-          : `<button class="quest-action" data-side-done>Complete</button>`}
-      </div>
-      ${game.sideQuest.done ? "" : `<button class="sidequest-change" data-side-reset>choose another</button>`}`
-      : `<div class="sidequest-options">${game.sideQuestOptions.map((q) =>
-          `<button data-side-pick="${q.id}"><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span></button>`).join("")}</div>`}
+    <div class="momentum-status">
+      <span><strong>${game.sortSolved}/4</strong> puzzle groups</span>
+      <span><strong>${steps.toLocaleString()}</strong> Garmin steps</span>
+      <span><strong>${game.dailySetComplete ? "✓" : "—"}</strong> daily set</span>
     </div>
     ${game.returnBonusEligible ? `<p class="return-bonus">Return bonus ready · your next logged action earns +5. Nothing reset.</p>` : ""}
     ${game.returnBonusEarned ? `<p class="return-bonus earned">Return bonus earned · +5 for coming back.</p>` : ""}
-    <p class="game-rule">Points reward noticing, planning, and logging. They never rank a meal or a number on the scale.</p>
+    <p class="game-rule">The board moves from the puzzle, one useful read, and Garmin activity. Food choices and scale results are never scored.</p>
   </section>` : ""}
 
-  <details class="card weight-card">
-    <summary>Weight <span>${last ? `${last.lbs.toFixed(1)} lb · ${fmtNice(last.date)}` : "add a reading"}</span></summary>
-    <div class="row">
-      <input type="number" inputmode="decimal" step="0.1" min="80" max="500" id="wIn"
-             placeholder="${last ? last.lbs.toFixed(1) : "e.g., 240.0"}">
-      <button class="btn primary fit" id="wSave">Save</button>
+  ${game ? `<section class="card sort-card ${sortState.completedAt ? "complete" : ""}" id="dailySortCard" aria-labelledby="sortTitle">
+    <div class="sort-head">
+      <div><p class="eyebrow">Daily game</p><h2 id="sortTitle">Daily Sort <span class="sub">four groups of three</span></h2></div>
+      <span class="sort-score">${sortState.completedAt ? "solved" : "+12"}</span>
     </div>
-    <p class="trend-note">
-      ${last ? `Last: <strong>${last.lbs.toFixed(1)}</strong> (${fmtNice(last.date)})` : "No entries yet"}
-      ${rate !== null ? ` · 7-day trend ${rate > 0 ? "+" : ""}${rate.toFixed(1)} lb/wk` : ""}
-    </p>
-  </details>
+    ${[...solvedLabels].map((label) => {
+      const group = sortGame.groups.find((item) => item.label === label);
+      return group ? `<div class="sort-solved"><strong>${esc(group.label)}</strong><span>${group.words.map(esc).join(" · ")}</span></div>` : "";
+    }).join("")}
+    ${sortState.completedAt
+      ? `<div class="sort-finish"><strong>Board cleared.</strong><span>A new puzzle arrives tomorrow. No streak to protect.</span></div>`
+      : `<div class="sort-grid">${displayWords.map((word) => `<button class="sort-tile ${selectedWords.has(word) ? "selected" : ""}" data-sort-word="${esc(word)}" aria-pressed="${selectedWords.has(word)}">${esc(word)}</button>`).join("")}</div>
+        <div class="sort-controls">
+          <button class="btn subtle" id="sortShuffle">Shuffle</button>
+          <span>${selectedWords.size}/3 selected${sortState.mistakes ? ` · ${sortState.mistakes} tries` : ""}</span>
+          <button class="btn primary" id="sortCheck" ${selectedWords.size === 3 ? "" : "disabled"}>Check group</button>
+        </div>`}
+  </section>` : ""}
 
-  <div class="card" id="checkinCard">
-    <h2>Check-in <span class="sub">a few taps, done</span></h2>
-    <div class="chip-row"><span class="lbl">Meals today</span>
-      ${chip("meals", "Regular", checkin.meals)}${chip("meals", "Mixed", checkin.meals)}${chip("meals", "Off", checkin.meals)}
+  <section class="card route-card" id="checkinCard">
+    <div class="route-head"><div><p class="eyebrow">One useful read</p><h2>What lane fits today?</h2></div><span>+4</span></div>
+    <div class="capacity-grid">
+      ${CAPACITY_CHOICES.map((choice) => `<button data-capacity="${choice.id}" class="${checkin.capacity === choice.id ? "selected" : ""}" aria-pressed="${checkin.capacity === choice.id}"><strong>${choice.label}</strong><span>${choice.note}</span></button>`).join("")}
     </div>
-    <div class="chip-row"><span class="lbl">Dinner</span>
-      ${chip("dinner", "Before 8:30", checkin.dinner)}${chip("dinner", "Later", checkin.dinner)}${chip("dinner", "Skipped", checkin.dinner)}
-    </div>
-    <div class="chip-row"><span class="lbl">Movement</span>
-      ${chip("movement", "Session done", checkin.movement)}${chip("movement", "Some movement", checkin.movement)}${chip("movement", "Rest day", checkin.movement)}
-    </div>
-    <div class="row" style="margin-top:10px">
-      <input type="text" id="winIn" placeholder="Add a win (optional) — e.g., took the stairs">
-      <button class="btn secondary fit" id="winSave">Add</button>
-    </div>
-  </div>
+    ${route ? `<div class="route-recommendation"><div><span>Best next move</span><strong>${esc(route.title)}</strong><p>${esc(route.text)}</p></div><button class="btn primary fit" id="routeAction" data-target="${route.target}">${esc(route.button)}</button></div>` : `<p class="hint">One tap changes the recommendation. It is context, not a grade.</p>`}
+  </section>
 
   ${todaySlot ? `
   <div class="card" id="sessionCard">
@@ -783,7 +803,7 @@ RENDER.today = async function () {
   </div>` : ""}
 
   <div class="card" id="mealCard">
-    <h2>Meals today</h2>
+    <h2>Dinner lane <span class="sub">choose once, reduce friction</span></h2>
     ${lastDinner ? `<p style="margin:4px 0">Lunch: leftovers — ${esc(lastDinner.value)}</p>` : ""}
     ${tonight
       ? `<p style="margin:4px 0">Tonight: <strong>${esc(tonight)}</strong>
@@ -794,25 +814,25 @@ RENDER.today = async function () {
            <button class="chip small" id="tonightOther">Other dinner…</button>
          </div>
          ${mw && mw.meals.length ? "" : `<p class="hint">Meal week arrives with sync, or paste one in the Meals tab.</p>`}`}
-    ${mealsLogged.map((m) => `<p style="margin:4px 0" class="quiet">${esc(m.slot)}: ${esc(m.text)}
-      <button class="btn subtle fit" data-del-meal="${m.id}" style="padding:2px 8px; font-size:12px">×</button></p>`).join("")}
-    <div class="chip-row" style="margin-top:10px"><span class="lbl">Add anything else you ate</span>
-      ${["Breakfast", "Lunch", "Snack", "Dinner"].map((s) =>
-        `<button class="chip small ${s === defaultMealSlot() ? "on" : ""}" data-slot="${s}">${s}</button>`).join("")}
-    </div>
-    <div class="row">
-      <input type="text" id="mealIn" placeholder="e.g., breakfast sandwich, tacos out…">
-      <button class="btn secondary fit" id="mealAdd">Add</button>
-    </div>
+    <details class="optional-log">
+      <summary>Optional food note${mealsLogged.length ? ` · ${mealsLogged.length} today` : ""}</summary>
+      ${mealsLogged.map((m) => `<p style="margin:4px 0" class="quiet">${esc(m.slot)}: ${esc(m.text)}
+        <button class="btn subtle fit" data-del-meal="${m.id}" style="padding:2px 8px; font-size:12px">×</button></p>`).join("")}
+      <div class="chip-row" style="margin-top:10px"><span class="lbl">If a note would help later</span>
+        ${["Breakfast", "Lunch", "Snack", "Dinner"].map((s) =>
+          `<button class="chip small ${s === defaultMealSlot() ? "on" : ""}" data-slot="${s}">${s}</button>`).join("")}
+      </div>
+      <div class="row">
+        <input type="text" id="mealIn" placeholder="Short note, not a food audit">
+        <button class="btn secondary fit" id="mealAdd">Add</button>
+      </div>
+    </details>
   </div>
 
-  <div class="card">
-    <h2>Steps <span class="sub">goal ${stepGoal().toLocaleString()}</span></h2>
-    <div class="row">
-      <div>${stepsRow ? Number(stepsRow.value).toLocaleString() : "—"}
-        <span class="quiet" style="font-size:13px">${stepsRow ? "" : "no sync data yet"}</span></div>
-      <button class="btn subtle fit" id="stepsEnter">Enter</button>
-    </div>
+  <div class="card garmin-card">
+    <div class="garmin-card-head"><div><p class="eyebrow">Automatic from Garmin</p><h2>Steps</h2></div><strong>${stepsRow ? steps.toLocaleString() : "—"}</strong></div>
+    ${progressBar(steps, stepGoal(), `${steps.toLocaleString()} of ${stepGoal().toLocaleString()} steps`)}
+    <p class="hint">${stepsRow ? `${Math.max(0, stepGoal() - steps).toLocaleString()} to the current ${stepGoal().toLocaleString()} target · last PC snapshot ${garminGenerated && garminGenerated.value ? relativeTime(garminGenerated.value) : "not available"}` : "No synchronized step data yet. There is nothing to enter manually."}</p>
   </div>`;
 
   // events
@@ -820,62 +840,54 @@ RENDER.today = async function () {
   if (reminderHealthBtn) reminderHealthBtn.addEventListener("click", openSettings);
   const garminHealthBtn = $("#garminHealthBtn", view);
   if (garminHealthBtn) garminHealthBtn.addEventListener("click", openSettings);
-  $$('[data-side-pick]', view).forEach((button) => button.addEventListener("click", async () => {
-    await DB.put("kv", { key: `sidequest:${date}`, value: { id: button.dataset.sidePick, done: false } });
-    toast("Side quest chosen");
+  $$("[data-sort-word]", view).forEach((button) => button.addEventListener("click", async () => {
+    const selected = new Set(Array.isArray(sortState.selected) ? sortState.selected : []);
+    const word = button.dataset.sortWord;
+    if (selected.has(word)) selected.delete(word);
+    else if (selected.size < 3) selected.add(word);
+    else { toast("Choose three tiles at a time"); return; }
+    await DB.put("kv", { key: `sort:${date}`, value: { ...sortState, selected: [...selected] } });
     RENDER.today();
   }));
-  const sideDone = $("[data-side-done]", view);
-  if (sideDone) sideDone.addEventListener("click", async () => {
-    const row = await DB.get("kv", `sidequest:${date}`);
-    if (!row || !row.value) return;
-    await DB.put("kv", { key: `sidequest:${date}`, value: { ...row.value, done: true } });
-    toast("Side quest complete · +8 momentum");
+  const sortCheck = $("#sortCheck", view);
+  if (sortCheck) sortCheck.addEventListener("click", async () => {
+    const selected = new Set(Array.isArray(sortState.selected) ? sortState.selected : []);
+    if (selected.size !== 3) return;
+    const match = sortGame.groups.find((group) => !solvedLabels.has(group.label) && group.words.every((word) => selected.has(word)));
+    if (!match) {
+      await DB.put("kv", { key: `sort:${date}`, value: { ...sortState, selected: [], mistakes: (Number(sortState.mistakes) || 0) + 1 } });
+      toast("Not that set. Try another angle.");
+      RENDER.today();
+      return;
+    }
+    const solved = [...solvedLabels, match.label];
+    const value = { ...sortState, solved, selected: [] };
+    if (solved.length === sortGame.groups.length) value.completedAt = new Date().toISOString();
+    await DB.put("kv", { key: `sort:${date}`, value });
+    toast(value.completedAt ? "Board cleared · +12 momentum" : `${match.label} found`);
     RENDER.today();
   });
-  const sideReset = $("[data-side-reset]", view);
-  if (sideReset) sideReset.addEventListener("click", async () => {
-    await DB.del("kv", `sidequest:${date}`);
+  const sortShuffle = $("#sortShuffle", view);
+  if (sortShuffle) sortShuffle.addEventListener("click", () => {
+    sortShuffleOffset += 1;
     RENDER.today();
   });
-  const pauseQuest = $("[data-quest-pause]", view);
-  if (pauseQuest) pauseQuest.addEventListener("click", async () => {
-    await DB.put("kv", { key: `quest:${date}:pause`, value: true });
-    toast("Mindful pause · +8 momentum");
-    RENDER.today();
-  });
-  const dinnerQuest = $("[data-quest-dinner]", view);
-  if (dinnerQuest) dinnerQuest.addEventListener("click", () => {
-    $("#mealCard", view).scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-  const moveQuest = $("[data-quest-move]", view);
-  if (moveQuest) moveQuest.addEventListener("click", () => {
-    const target = $("#sessionCard", view);
-    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-    else openLogOther();
-  });
-  $("#wSave").addEventListener("click", async () => {
-    const v = parseFloat($("#wIn").value);
-    if (!v || v < 80 || v > 500) { toast("Enter a weight first"); return; }
-    await DB.put("weights", { date, lbs: Math.round(v * 10) / 10, source: "manual" });
-    toast("Trend check saved · +3 momentum");
-    RENDER.today();
-  });
-  $$("[data-ci]", view).forEach((b) => b.addEventListener("click", async () => {
+  $$("[data-capacity]", view).forEach((button) => button.addEventListener("click", async () => {
     const existing = (await DB.get("checkins", date)) || { date };
-    const key = b.dataset.ci;
-    const firstAnswer = !existing[key];
-    existing[key] = existing[key] === b.dataset.val ? undefined : b.dataset.val;
+    const firstRead = !existing.capacity;
+    existing.capacity = button.dataset.capacity;
     await DB.put("checkins", existing);
-    if (firstAnswer && existing[key]) toast("Check-in noted · +4 momentum");
+    if (firstRead) toast("Route adjusted · +4 momentum");
     RENDER.today();
   }));
-  $("#winSave").addEventListener("click", async () => {
-    const text = $("#winIn").value.trim();
-    if (!text) return;
-    await DB.put("wins", { date, text });
-    $("#winIn").value = "";
-    toast("Win noticed · +4 momentum");
+  const routeAction = $("#routeAction", view);
+  if (routeAction) routeAction.addEventListener("click", () => {
+    const target = routeAction.dataset.target;
+    if (target === "move" || target === "meals") show(target);
+    else {
+      const element = $("#" + target, view);
+      if (element) element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   });
   $$("[data-pick-tonight]", view).forEach((b) => b.addEventListener("click", async () => {
     mw.tonight = Number(b.dataset.pickTonight);
@@ -915,17 +927,12 @@ RENDER.today = async function () {
     await DB.del("meallog", Number(b.dataset.delMeal));
     RENDER.today();
   }));
-  $("#stepsEnter").addEventListener("click", async () => {
-    const v = prompt("Steps today (from the watch or Garmin app):");
-    const n = parseInt(v, 10);
-    if (n > 0) { await DB.put("kv", { key: "steps:" + date, value: n }); RENDER.today(); }
-  });
   wireLibButtons(view);
   const logOther = $("#logOther");
   if (logOther) logOther.addEventListener("click", openLogOther);
 
   if (showReview) renderReviewCard();
-  updateAppBadge(game);
+  clearAppBadge();
 };
 
 /* Log whatever actually happened — the plan is a suggestion, the log is truth. */
@@ -988,7 +995,7 @@ async function renderReviewCard() {
   const inWeek = (d) => d >= weekStart && d <= weekEnd;
 
   const sessions = (await DB.all("sessions")).filter((s) => inWeek(s.date));
-  const checkins = (await DB.all("checkins")).filter((c) => inWeek(c.date) && (c.meals || c.dinner || c.movement));
+  const checkins = (await DB.all("checkins")).filter((c) => inWeek(c.date) && (c.capacity || c.meals || c.dinner || c.movement));
   const weights = await sortedWeights();
   const rate = trendPerWeek(weights);
 
@@ -1287,19 +1294,18 @@ function parseMealDoc(text) {
   let inMealSection = false;
   for (const line of lines) {
     const h = line.match(/^#{1,3}\s+(.*)/);
-    if (h) { inMealSection = /meal/i.test(h[1]); continue; }
+    if (h) {
+      const title = h[1];
+      inMealSection = (/\bmeals\b|\bmeal\s+set\b/i.test(title) &&
+        !/ingredient|shopping|cart|rule|search|preference|context|purpose|assumption|summary/i.test(title));
+      continue;
+    }
     if (inMealSection) {
       const m = line.match(/^\s{0,3}\d+\.\s+(.*)/);
       if (m) meals.push(m[1].trim());
     }
   }
-  if (!meals.length) {
-    for (const line of lines) {
-      const m = line.match(/^\d+\.\s+(.*)/);
-      if (m) meals.push(m[1].trim());
-    }
-  }
-  return meals;
+  return [...new Set(meals)];
 }
 
 RENDER.meals = async function () {
@@ -1311,6 +1317,7 @@ RENDER.meals = async function () {
   view.innerHTML = `
   <div class="card">
     <h2>This week's dinners <span class="sub">week of ${fmtNice(wk)}</span></h2>
+    ${mw && mw.source ? `<p class="hint" style="margin-top:-4px">Auto-synced from ${esc(mw.source)}</p>` : ""}
     ${mw && mw.meals.length ? mw.meals.map((m, i) => `
       <div class="meal-row">
         <input type="checkbox" data-cooked="${i}" ${m.cooked ? "checked" : ""}>
@@ -1356,11 +1363,13 @@ function openMealImport() {
   $("#sheetClose", sheet).addEventListener("click", closeSheet);
   $("#mealParse", sheet).addEventListener("click", async () => {
     const meals = parseMealDoc($("#mealPaste").value);
-    if (!meals.length) { toast("No numbered meal list found in that text"); return; }
+    if (meals.length < 2) { toast("No weekly meal list found. Single-meal briefs are ignored."); return; }
     await DB.put("mealweek", {
       weekOf: weekMonday(),
       meals: meals.map((name) => ({ name, cooked: false })),
       tonight: null,
+      source: "manual paste",
+      published: new Date().toISOString(),
     });
     closeSheet();
     toast(`Imported ${meals.length} meals`);
@@ -1381,8 +1390,8 @@ RENDER.trends = async function () {
   const checkins = await DB.all("checkins");
   const now = todayISO();
   const within = (d, days) => d >= addDays(now, -days + 1);
-  const c7 = checkins.filter((c) => within(c.date, 7) && (c.meals || c.dinner || c.movement)).length;
-  const c28 = checkins.filter((c) => within(c.date, 28) && (c.meals || c.dinner || c.movement)).length;
+  const c7 = checkins.filter((c) => within(c.date, 7) && (c.capacity || c.meals || c.dinner || c.movement)).length;
+  const c28 = checkins.filter((c) => within(c.date, 28) && (c.capacity || c.meals || c.dinner || c.movement)).length;
   const game = SETTINGS.gameMode ? await gameSnapshot(now) : null;
   const impactRow = await DB.get("kv", "impactSnapshot");
   const impact = impactRow ? impactRow.value : null;
@@ -1673,7 +1682,7 @@ async function openSettings() {
       <summary>Momentum game</summary>
       <label class="row" style="align-items:center">
         <input type="checkbox" id="sGame" ${SETTINGS.gameMode ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto;accent-color:var(--accent)">
-        <span><strong>Show levels, daily quests, and milestones</strong><br><span class="hint">Points reward interaction and follow-through. Food choices and scale results are never scored.</span></span>
+        <span><strong>Show Daily Sort, levels, campaigns, and milestones</strong><br><span class="hint">Points reward interaction and follow-through. Food choices and scale results are never scored.</span></span>
       </label>
     </details>
 
@@ -1712,11 +1721,9 @@ async function openSettings() {
       <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px">
         <button class="btn secondary" id="sExport">Export backup</button>
         <button class="btn secondary" id="sImportBtn">Import backup</button>
-        <button class="btn secondary" id="sGarminBtn">Import Garmin weights</button>
       </div>
       <input type="file" id="sImportFile" accept=".json,application/json" hidden>
-      <input type="file" id="sGarminFile" accept=".json,application/json" hidden>
-      <p class="hint">Garmin import reads body_composition.json from the data pull. Manual entries on the same date are kept.</p>
+      <p class="hint">Weight and steps arrive automatically from the private Garmin sync. There is nothing to import or enter here.</p>
       <div style="margin-top:14px"><button class="danger-btn" id="sWipe">Erase all app data</button></div>
     </details>
 
@@ -1772,14 +1779,6 @@ async function openSettings() {
       show(activeTab);
     } catch (err) { toast("That file did not import: " + err.message); }
   });
-  $("#sGarminBtn", sheet).addEventListener("click", () => $("#sGarminFile").click());
-  $("#sGarminFile", sheet).addEventListener("change", async (e) => {
-    try {
-      const n = await importGarminWeights(e.target.files[0]);
-      toast(`Imported ${n} weigh-ins from Garmin`);
-      show(activeTab);
-    } catch (err) { toast("That file did not import: " + err.message); }
-  });
   $("#sWipe", sheet).addEventListener("click", async () => {
     if (!confirm("Erase everything this app has stored on this device?")) return;
     await DB.wipe();
@@ -1790,23 +1789,6 @@ async function openSettings() {
   });
 }
 
-async function importGarminWeights(file) {
-  const data = JSON.parse(await file.text());
-  const list = data.dateWeightList || [];
-  if (!list.length) throw new Error("no dateWeightList found");
-  let n = 0;
-  for (const e of list) {
-    const d = String(e.calendarDate || e.date || "").slice(0, 10);
-    const grams = e.weight;
-    if (!d || !grams) continue;
-    const existing = await DB.get("weights", d);
-    if (existing && existing.source === "manual") continue; // manual wins
-    await DB.put("weights", { date: d, lbs: Math.round(grams / 453.592 * 10) / 10, source: "garmin" });
-    n++;
-  }
-  return n;
-}
-
 /* ---------- boot ---------- */
 (async function boot() {
   $("#todayDate").textContent = fmtNice(todayISO());
@@ -1814,12 +1796,13 @@ async function importGarminWeights(file) {
   if ("serviceWorker" in navigator) {
     await navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+  await clearAppBadge();
   await recordAppOpen();
   await show("today");
   const focus = new URLSearchParams(location.search).get("focus");
   if (focus) {
     setTimeout(() => {
-      const target = focus === "morning" ? $("#sessionCard") : focus === "lunch" || focus === "dinner" ? $("#mealCard") : $("#reminderHealthBtn");
+      const target = focus === "morning" ? $("#dailySortCard") : focus === "lunch" || focus === "dinner" ? $("#mealCard") : $("#reminderHealthBtn");
       if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
       history.replaceState({}, "", location.pathname);
     }, 250);

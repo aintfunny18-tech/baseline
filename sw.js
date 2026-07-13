@@ -1,5 +1,5 @@
 /* Baseline — service worker: cache-first app shell for offline use. */
-const CACHE = "baseline-v10";
+const CACHE = "baseline-v11";
 const PUSH_STATE_CACHE = "baseline-push-state";
 const SHELL = [
   "./",
@@ -23,6 +23,7 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== PUSH_STATE_CACHE).map((k) => caches.delete(k))))
+      .then(() => self.registration.clearAppBadge ? self.registration.clearAppBadge() : undefined)
       .then(() => self.clients.claim())
   );
 });

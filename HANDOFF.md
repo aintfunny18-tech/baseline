@@ -14,9 +14,10 @@ lives in this repository and deploys through GitHub Pages.
 - Runtime: vanilla HTML, CSS, and JavaScript; no build step or dependencies
 - Primary device: iPhone home-screen PWA
 
-The 2026-07-12 release makes reminders observable and repairable, adds side
-quests and comeback/set bonuses, publishes a private engagement aggregate, and
-shows the automatically refreshed early-impact comparison. The game can be
+The current 2026-07-12 release centers Today on Daily Sort, a fourteen-board
+4-by-3 grouping game, plus a one-tap capacity read that produces an adaptive
+next move. Garmin supplies weight and steps automatically. App-icon counts are
+disabled; push reminders remain observable and repairable. The game can be
 hidden in Settings without changing or deleting any health records.
 
 ## Product rules
@@ -33,6 +34,8 @@ These are non-negotiable unless Anthony explicitly changes them.
 7. Keep the app private by default and do not add social or partner visibility.
 8. Prefer short, calm copy. No mascot energy, praise-bombing, or red failure
    states.
+9. Keep app-icon badge counts off. Reminder delivery should use push
+   notifications and in-app health state only.
 
 ## Repository and privacy boundary
 
@@ -69,13 +72,14 @@ only. Sync credentials are entered on-device and stored in browser localStorage.
 IndexedDB database: `baseline-db`, currently version 2.
 
 - `weights {date, lbs, source}`
-- `checkins {date, meals, dinner, movement}`
+- `checkins {date, capacity}`; older records may retain legacy meal, dinner,
+  and movement answers
 - `wins {id, date, text}`
 - `sessions {id, date, kind, minutes}`
-- `mealweek {weekOf, meals[], tonight}`
+- `mealweek {weekOf, meals[], tonight, source, published}`
 - `meallog {id, date, slot, text}`
-- `kv {key, value}` for settings, steps, dinner choices, quest state, and sync
-  timestamps
+- `kv {key, value}` for settings, automatic steps, dinner choices, Daily Sort
+  state, legacy quest state, and sync timestamps
 
 Adding a new object store requires increasing the database version in `db.js`.
 Additive settings and small keyed records should normally use `kv` instead.
@@ -87,21 +91,39 @@ of retroactive points.
 
 | Action | Points | Limit |
 | --- | ---: | --- |
-| Answer a check-in category | 4 | 12 per day across three categories |
+| Choose the day's capacity lane | 4 | Once per day |
+| Solve Daily Sort | 12 | Once per day |
 | Log intentional movement | 15 | Once per day |
 | Log a distinct meal slot | 2 | 8 per day |
-| Record a weigh-in | 3 | Once per day |
 | Notice a win | 4 | Once per day |
 | Decide dinner | 5 | Once per day |
 | Reach the current step target | 10 | Once per day |
-| Mark a mindful pause | 8 | Once per day |
-| Complete the chosen side quest | 8 | Once per day |
-| Complete dinner, movement, and pause quests | 10 | Once per day |
+| Complete dinner, movement, and the daily read | 10 | Once per day |
 | Return after at least two empty days | 5 | On the returning day |
 
-All values within a check-in category score equally. Do not introduce points for
-losing weight, eating a particular food, skipping food, or exceeding an exercise
-target. Level size is currently 80 points.
+All three capacity lanes score equally. Do not introduce points for losing
+weight, eating a particular food, skipping food, or exceeding an exercise
+target. Legacy side-quest and mindful-pause points remain in historical totals.
+Level size is currently 80 points.
+
+## Daily game and practical read
+
+`DAILY_SORTS` contains fourteen deterministic boards. Each board has four
+groups of three unique tiles. The user may shuffle and retry without lives,
+losses, or penalties. Completion is stored at `kv sort:YYYY-MM-DD`.
+
+The capacity read stores only `low`, `steady`, or `high`. It does not ask the
+user to classify food or manually restate movement. The recommendation uses
+automatic steps, whether dinner is decided, the planned session, and whether a
+session is already logged. Keep this to one decision and one recommendation.
+
+## Meal handoff selection
+
+The PC publisher must select a weekly menu, not simply the newest grocery
+document. A valid source has an explicit plural `Meals` or `Meal Set` section
+and at least two numbered meal names. Single-meal Dinner Games briefs and
+numbered shopping rules are intentionally rejected. The same rule applies to
+manual paste import in the app.
 
 ## Reminder architecture
 
@@ -130,9 +152,10 @@ compares complete post-launch days with a fixed 28-day baseline and prior
 matching weekdays; the current day is excluded as incomplete.
 
 The PWA publishes `engagement.json` at most once per day after reminders are
-enabled. It contains daily open counts, check-in-field counts, and boolean
-completion flags. It intentionally excludes meal text, weight, and free-text
-wins.
+enabled. It contains daily open counts, whether a daily read occurred, Daily
+Sort groups/completion, meal-slot counts, and boolean completion flags. It
+intentionally excludes the selected capacity value, meal text, weight, and
+free-text wins.
 
 ## Local development
 
@@ -180,8 +203,8 @@ new service worker to take control.
 
 1. Confirm the next scheduled morning, lunch, and dinner reminders appear on
    the iPhone and that Settings records device receipt.
-2. Use the side-quest and comeback loop for one week; adjust point balance only
-   if a normal day feels trivial or grindy.
+2. Use Daily Sort and the adaptive route for one week; expand the puzzle bank
+   before any board repeats begin to feel familiar.
 3. Repeat the impact review after 21-28 complete days and several weigh-ins.
 4. Add a timed-mile tracker when the mile program begins producing attempts.
 5. Review the step-goal ramp before increasing its cap.

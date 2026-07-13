@@ -6,6 +6,42 @@ This file records user-visible changes to Baseline. Dates use Eastern Time.
 
 No unreleased changes.
 
+## 1.3.0 - 2026-07-12
+
+### Added
+
+- Daily Sort, a rotating bank of fourteen 4-by-3 grouping puzzles with four
+  hidden sets of three and no loss condition or streak penalty.
+- A one-tap daily read—low bandwidth, steady, or ready for more—that turns
+  current Garmin steps, dinner status, and the movement plan into one useful
+  recommendation.
+- Automatic source labels on the weekly dinner list.
+
+### Changed
+
+- Today now centers the daily game, adaptive route, dinner decision, planned
+  movement, and an automatically refreshed Garmin step bar.
+- Weight remains available as a trend but no longer appears as a logging task
+  on Today.
+- Food notes remain available behind an optional disclosure instead of being a
+  required-looking daily form.
+- The daily-set bonus now uses dinner, movement, and the one-tap daily read.
+
+### Removed
+
+- App-icon badge counts. Push notifications continue without bubble counts.
+- Manual weight entry, manual step entry, and the separate Garmin-weight file
+  import; weight and steps arrive through private sync.
+- The click-based side-quest picker and three-row check-in.
+
+### Fixed
+
+- The meal publisher no longer treats numbered cart-building rules in a
+  single-meal Dinner Games brief as the week's dinners. It selects the newest
+  handoff with an explicit multi-meal weekly list.
+- The current week was restored to the five dinners in the July 10 weekly
+  handoff.
+
 ## 1.2.0 - 2026-07-12
 
 ### Added

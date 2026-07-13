@@ -149,15 +149,6 @@ button.btn {
 .settings-health div strong, .settings-health div span { display: block; }
 .settings-health div strong { font-size: 13px; }
 .settings-health div span { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
-.weight-card { padding: 0; overflow: hidden; }
-.weight-card summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; font-size: 14px; font-weight: 680; }
-.weight-card summary::-webkit-details-marker { display: none; }
-.weight-card summary::after { content: "+"; color: var(--accent); font-size: 18px; margin-left: 8px; }
-.weight-card[open] summary::after { content: "−"; }
-.weight-card summary > span { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 500; }
-.weight-card > .row, .weight-card > .trend-note { margin-left: 16px; margin-right: 16px; }
-.weight-card > .trend-note { margin-bottom: 14px; }
-
 /* momentum game */
 .momentum-hero {
   position: relative;
@@ -191,43 +182,48 @@ button.btn {
 .progress-track span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 68%, var(--gold))); border-radius: inherit; transition: width .35s ease; }
 .momentum-hero > .progress-track { margin: 14px 0 16px; background: rgba(255,255,255,.15); }
 .momentum-hero > .progress-track span { background: linear-gradient(90deg, #f5c95e, #ffe6a1); }
-.quest-head { display: flex; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 8px; }
-.quest-head div { display: flex; align-items: baseline; gap: 8px; }
-.quest-head strong { font-size: 13.5px; }
-.quest-head span { font-size: 11px; color: rgba(255,255,255,.66); }
-.quest-points { text-transform: uppercase; letter-spacing: .06em; }
-.quest-list { display: grid; gap: 7px; }
-.quest {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center;
-  min-height: 54px; padding: 8px 9px; border-radius: 12px;
-  background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.1);
-}
-.quest.done { background: rgba(255,255,255,.055); }
-.quest-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.13); color: #ffe39a; font-size: 11px; font-weight: 800; }
-.quest.done .quest-mark { color: #fff; background: rgba(255,255,255,.18); }
-.quest div { min-width: 0; }
-.quest div strong, .quest div span { display: block; }
-.quest div strong { font-size: 13.5px; }
-.quest div span { color: rgba(255,255,255,.65); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.quest-action { border: 0; border-radius: 999px; padding: 7px 10px; background: #fff; color: #12543f; font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
-.quest-state { font-size: 10.5px; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .08em; }
-.sidequest-panel { margin-top: 10px; padding: 11px; border-radius: 13px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.12); }
-.sidequest-panel.done { background: rgba(255,255,255,.06); }
-.sidequest-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-.sidequest-head strong { font-size: 12.5px; }
-.sidequest-head span { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: rgba(255,255,255,.6); }
-.sidequest-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.sidequest-options button { min-width: 0; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 8px; background: rgba(255,255,255,.08); color: #fff; font: inherit; text-align: left; cursor: pointer; }
-.sidequest-options strong, .sidequest-options span, .sidequest-selected strong, .sidequest-selected span { display: block; }
-.sidequest-options strong { font-size: 11px; line-height: 1.25; }
-.sidequest-options span { margin-top: 3px; color: rgba(255,255,255,.58); font-size: 9.5px; line-height: 1.25; }
-.sidequest-selected { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
-.sidequest-selected strong { font-size: 13px; }
-.sidequest-selected div span { font-size: 11px; color: rgba(255,255,255,.65); }
-.sidequest-change { margin-top: 6px; padding: 0; border: 0; background: transparent; color: rgba(255,255,255,.62); font: inherit; font-size: 10.5px; cursor: pointer; }
 .return-bonus { margin: 9px 1px 0; padding: 7px 9px; border-radius: 9px; background: rgba(255,226,143,.13); color: #ffe39a; font-size: 11px; }
 .return-bonus.earned { color: #fff; background: rgba(255,255,255,.1); }
 .game-rule { margin: 10px 2px 0; color: rgba(255,255,255,.55); font-size: 10.5px; }
+.momentum-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 14px; }
+.momentum-status span { padding: 9px 8px; border-radius: 11px; background: rgba(255,255,255,.09); color: rgba(255,255,255,.66); font-size: 10px; text-align: center; }
+.momentum-status strong { display: block; color: #fff; font-size: 14px; }
+
+.sort-card { border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); background: linear-gradient(150deg, var(--card), color-mix(in srgb, var(--accent-soft) 45%, var(--card))); }
+.sort-card.complete { border-color: color-mix(in srgb, var(--gold) 54%, var(--border)); }
+.sort-head, .route-head, .garmin-card-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.sort-head .eyebrow, .route-head .eyebrow, .garmin-card-head .eyebrow { color: var(--accent); opacity: 1; }
+.sort-head h2, .route-head h2, .garmin-card-head h2 { margin: 0; font-size: 19px; }
+.sort-score, .route-head > span { padding: 5px 9px; border-radius: 999px; background: var(--gold-soft); color: var(--accent); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
+.sort-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin: 14px 0 11px; }
+.sort-tile { min-width: 0; min-height: 52px; padding: 7px 3px; border: 1px solid var(--border); border-radius: 11px; background: var(--card); color: var(--ink); font: inherit; font-size: 10.5px; font-weight: 760; letter-spacing: .025em; cursor: pointer; box-shadow: 0 3px 8px rgba(14,73,57,.06); -webkit-tap-highlight-color: transparent; }
+.sort-tile.selected { border-color: var(--accent); background: var(--accent); color: #fff; transform: translateY(-1px); box-shadow: 0 6px 14px rgba(14,73,57,.2); }
+.sort-solved { margin-top: 8px; padding: 10px 12px; border-radius: 11px; background: var(--accent); color: #fff; text-align: center; }
+.sort-solved strong, .sort-solved span { display: block; }
+.sort-solved strong { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.sort-solved span { margin-top: 2px; font-size: 10.5px; opacity: .75; }
+.sort-controls { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; }
+.sort-controls span { color: var(--muted); font-size: 10.5px; text-align: center; }
+.sort-finish { margin-top: 12px; padding: 19px 14px; border-radius: 14px; background: var(--gold-soft); text-align: center; }
+.sort-finish strong, .sort-finish span { display: block; }
+.sort-finish strong { color: var(--accent); font-size: 17px; }
+.sort-finish span { margin-top: 3px; color: var(--muted); font-size: 11px; }
+
+.route-card { overflow: hidden; }
+.capacity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 12px; }
+.capacity-grid button { min-width: 0; min-height: 68px; padding: 10px 8px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--bg) 60%, var(--card)); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.capacity-grid button.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.capacity-grid strong, .capacity-grid span { display: block; }
+.capacity-grid strong { font-size: 11.5px; }
+.capacity-grid span { margin-top: 3px; color: var(--muted); font-size: 9.5px; line-height: 1.25; }
+.route-recommendation { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin: 12px -16px -16px; padding: 13px 16px; background: color-mix(in srgb, var(--accent-soft) 65%, var(--card)); border-top: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border)); }
+.route-recommendation div > span { color: var(--accent); font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; }
+.route-recommendation strong { display: block; margin-top: 1px; font-size: 13.5px; }
+.route-recommendation p { margin: 3px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+.garmin-card-head strong { color: var(--accent); font-size: 28px; line-height: 1; }
+.garmin-card > .progress-track { margin: 13px 0 8px; height: 9px; }
+.optional-log { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 9px; }
+.optional-log summary { cursor: pointer; color: var(--muted); font-size: 11.5px; }
 
 .game-card { border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); }
 .game-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -267,7 +263,7 @@ button.btn {
 .impact-bars i { display: block; width: 100%; align-self: end; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, var(--gold), var(--accent)); }
 .impact-bars span { color: var(--muted); font-size: 9px; }
 .impact-caveat { margin: 8px 0 0; color: var(--muted); font-size: 10.5px; }
-button:disabled { opacity: .55; cursor: wait; }
+button:disabled { opacity: .55; cursor: not-allowed; }
 
 /* week plan */
 .day-row {
@@ -374,14 +370,9 @@ details.settings-group summary { cursor: pointer; font-weight: 600; font-size: 1
   .point-badge { display: none; }
   .level-orb { width: 58px; height: 58px; }
   .momentum-copy h2 { font-size: 19px; }
-  .quest-head { align-items: baseline; }
-  .quest-head div { display: block; }
-  .quest-head div span { margin-left: 7px; }
-  .quest-points { display: none; }
-  .quest div span { max-width: 190px; }
-  .sidequest-options { grid-template-columns: 1fr; }
-  .sidequest-options button { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; align-items: center; }
-  .sidequest-options span { margin-top: 0; }
+  .sort-grid { gap: 5px; }
+  .sort-tile { min-height: 49px; font-size: 9.5px; }
+  .route-recommendation { grid-template-columns: 1fr; }
   .row { flex-wrap: wrap; }
   .badge-grid { gap: 7px; }
 }

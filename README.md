@@ -1,7 +1,8 @@
 # Baseline
 
 A private, local-first momentum game for weight, movement, and meals.
-Levels, quests, weekly campaigns, and milestones reward attention and follow-through.
+Daily grouping puzzles, adaptive routes, levels, campaigns, and milestones
+reward attention and follow-through.
 No calorie counting, no food labels, no guilt mechanics — habit-based
 by design.
 
@@ -11,6 +12,7 @@ by design.
   and private engagement summaries require read-and-write Contents access.
 - Installable (manifest + service worker, offline-capable)
 - Health-checked morning, lunch, and dinner web-push reminders
+- Automatic Garmin weight and step intake with no duplicate entry fields
 - Private Garmin sync and an automatically refreshed early-impact comparison
 
 Personal project; data stays with its owner.
