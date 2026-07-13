@@ -1,6 +1,6 @@
 # Baseline Development Handoff
 
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 ## Current state
 
@@ -14,9 +14,10 @@ lives in this repository and deploys through GitHub Pages.
 - Runtime: vanilla HTML, CSS, and JavaScript; no build step or dependencies
 - Primary device: iPhone home-screen PWA
 
-The 2026-07-10 release adds levels, daily quests, weekly campaign tracks,
-seven-day momentum history, and milestones. The game can be hidden in Settings
-without changing or deleting any health records.
+The 2026-07-12 release makes reminders observable and repairable, adds side
+quests and comeback/set bonuses, publishes a private engagement aggregate, and
+shows the automatically refreshed early-impact comparison. The game can be
+hidden in Settings without changing or deleting any health records.
 
 ## Product rules
 
@@ -94,10 +95,44 @@ of retroactive points.
 | Decide dinner | 5 | Once per day |
 | Reach the current step target | 10 | Once per day |
 | Mark a mindful pause | 8 | Once per day |
+| Complete the chosen side quest | 8 | Once per day |
+| Complete dinner, movement, and pause quests | 10 | Once per day |
+| Return after at least two empty days | 5 | On the returning day |
 
 All values within a check-in category score equally. Do not introduce points for
 losing weight, eating a particular food, skipping food, or exceeding an exercise
 target. Level size is currently 80 points.
+
+## Reminder architecture
+
+The installed PWA stores the current web-push subscription in the private
+`baseline-data` repository. The private `nudges` workflow makes several
+attempts during each Eastern-time morning, lunch, and dinner window because
+GitHub scheduled jobs can start late.
+
+- `nudge_state.json` is a private once-per-slot ledger that prevents duplicates.
+- `nudge_status.json` contains sanitized delivery health for the app.
+- `test_request.json` is updated by the app to trigger an immediate test run.
+- The service worker records the last received push in a private origin cache,
+  allowing Settings to distinguish provider acceptance from device receipt.
+- Missing or rotated subscriptions are recreated and the full endpoint/key
+  fingerprint is uploaded when the app runs and its server copy is more than
+  20 hours old.
+
+Never return to narrow execution-time gates without retry attempts and a
+deduplication ledger. GitHub Actions demonstrated substantial schedule delays
+in this project.
+
+## Private measurement files
+
+The PC publishes `impact_snapshot.json` alongside Garmin data and meals. It
+compares complete post-launch days with a fixed 28-day baseline and prior
+matching weekdays; the current day is excluded as incomplete.
+
+The PWA publishes `engagement.json` at most once per day after reminders are
+enabled. It contains daily open counts, check-in-field counts, and boolean
+completion flags. It intentionally excludes meal text, weight, and free-text
+wins.
 
 ## Local development
 
@@ -143,14 +178,14 @@ new service worker to take control.
 
 ## Current follow-ups
 
-1. Use the momentum game for one week and adjust point balance only if a normal
-   day feels either trivial or grindy.
-2. Verify the refreshed layout and service-worker update on the iPhone PWA.
-3. Add a timed-mile tracker when the mile program begins producing attempts.
-4. Review the step-goal ramp against actual Garmin data before increasing its
-   cap.
-5. Recheck the school-year movement schedule before 2026-08-17.
-6. Tune notification copy after observing which nudges lead to action.
+1. Confirm the next scheduled morning, lunch, and dinner reminders appear on
+   the iPhone and that Settings records device receipt.
+2. Use the side-quest and comeback loop for one week; adjust point balance only
+   if a normal day feels trivial or grindy.
+3. Repeat the impact review after 21-28 complete days and several weigh-ins.
+4. Add a timed-mile tracker when the mile program begins producing attempts.
+5. Review the step-goal ramp before increasing its cap.
+6. Recheck the school-year movement schedule before 2026-08-17.
 
 ## Release-note convention
 

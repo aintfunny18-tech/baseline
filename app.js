@@ -125,6 +125,19 @@ const LEVEL_NAMES = [
   "Steady operator",
   "In motion",
 ];
+const SIDE_QUESTS = [
+  { id: "walk10", title: "Ten-minute outside walk", text: "Shoes on. One block is enough to start." },
+  { id: "breakfast", title: "Set up breakfast", text: "Make tomorrow morning require one fewer decision." },
+  { id: "gear", title: "Stage workout gear", text: "Put the clothes or shoes where you will see them." },
+  { id: "produce", title: "Add one plant", text: "Add fruit or vegetables to the next meal." },
+  { id: "stretch5", title: "Five-minute mobility", text: "Start with hips, calves, or the knee-care list." },
+  { id: "bedtime", title: "Set a bedtime cue", text: "Choose when screens wind down tonight." },
+];
+
+function dailySideQuestOptions(date) {
+  const seed = Number(date.replaceAll("-", "")) % SIDE_QUESTS.length;
+  return [0, 2, 4].map((offset) => SIDE_QUESTS[(seed + offset) % SIDE_QUESTS.length]);
+}
 
 function levelName(level) {
   return LEVEL_NAMES[level - 1] || `Momentum ${level}`;
@@ -175,6 +188,8 @@ async function gameSnapshot(date = todayISO()) {
   const dinnerDates = new Set();
   const stepGoalDates = new Set();
   const pauseDates = new Set();
+  const sideQuestDates = new Set();
+  const sideQuestRecords = new Map();
   kv.forEach((row) => {
     if (row.key.startsWith("dinner:")) {
       const d = row.key.slice(7);
@@ -190,7 +205,29 @@ async function gameSnapshot(date = todayISO()) {
       const d = row.key.slice(6, -6);
       pauseDates.add(d);
       addGamePoints(days, d, 8, "mindful pause");
+    } else if (row.key.startsWith("sidequest:")) {
+      const d = row.key.slice(10);
+      sideQuestRecords.set(d, row.value);
+      if (row.value && row.value.done) {
+        sideQuestDates.add(d);
+        addGamePoints(days, d, 8, "side quest");
+      }
     }
+  });
+
+  const movementDates = new Set([...sessionDates, ...stepGoalDates]);
+  dinnerDates.forEach((d) => {
+    if (pauseDates.has(d) && movementDates.has(d)) addGamePoints(days, d, 10, "daily quest set");
+  });
+
+  // Returning after a gap earns a small bonus. Nothing breaks or resets.
+  const activeDates = Object.keys(days).filter((d) => days[d].points > 0).sort();
+  let previousActive = null;
+  activeDates.forEach((d) => {
+    if (previousActive && (new Date(d) - new Date(previousActive)) / 864e5 >= 3) {
+      addGamePoints(days, d, 5, "return bonus");
+    }
+    previousActive = d;
   });
 
   const orderedDays = Object.values(days).sort((a, b) => a.date.localeCompare(b.date));
@@ -198,6 +235,13 @@ async function gameSnapshot(date = todayISO()) {
   const level = Math.floor(total / LEVEL_SIZE) + 1;
   const levelPoints = total % LEVEL_SIZE;
   const todayPoints = days[date] ? days[date].points : 0;
+  const selectedSide = sideQuestRecords.get(date) || null;
+  const selectedSideDetail = selectedSide ? SIDE_QUESTS.find((q) => q.id === selectedSide.id) : null;
+  const beforeToday = activeDates.filter((d) => d < date);
+  const lastBeforeToday = beforeToday[beforeToday.length - 1];
+  const returnBonusEligible = !days[date] && lastBeforeToday &&
+    (new Date(date) - new Date(lastBeforeToday)) / 864e5 >= 3;
+  const returnBonusEarned = Boolean(days[date] && days[date].reasons.some((r) => r.reason === "return bonus"));
   const quests = [
     {
       id: "dinner",
@@ -225,7 +269,6 @@ async function gameSnapshot(date = todayISO()) {
   const weekStart = weekMonday(date);
   const thisWeek = (set) => [...set].filter((d) => d >= weekStart && d <= addDays(weekStart, 6)).length;
   const checkedDates = new Set(checkins.filter((c) => c.meals || c.dinner || c.movement).map((c) => c.date));
-  const movementDates = new Set([...sessionDates, ...stepGoalDates]);
   const checkinWeeks = {};
   checkedDates.forEach((d) => {
     const wk = weekMonday(d);
@@ -238,10 +281,15 @@ async function gameSnapshot(date = todayISO()) {
     { name: "Three-day pattern", note: "Move intentionally on 3 days", unlocked: movementDates.size >= 3 },
     { name: "Weekend switch", note: "Log movement on Saturday or Sunday", unlocked: [...movementDates].some((d) => dowIndex(d) >= 5) },
     { name: "Anchor week", note: "Check in on 5 days in one week", unlocked: Object.values(checkinWeeks).some((n) => n >= 5) },
+    { name: "Side path", note: "Complete one chosen side quest", unlocked: sideQuestDates.size >= 1 },
   ];
 
   return {
     total, level, levelPoints, todayPoints, days, quests, achievements,
+    sideQuest: selectedSideDetail ? { ...selectedSideDetail, done: Boolean(selectedSide.done) } : null,
+    sideQuestOptions: dailySideQuestOptions(date),
+    returnBonusEligible,
+    returnBonusEarned,
     week: {
       checkins: thisWeek(checkedDates),
       movement: thisWeek(movementDates),
@@ -255,6 +303,19 @@ function progressBar(value, max, label) {
   return `<div class="progress-track" role="progressbar" aria-label="${esc(label)}" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${Math.min(value, max)}">
     <span style="width:${pct}%"></span>
   </div>`;
+}
+
+async function updateAppBadge(game) {
+  if (!game) {
+    try { if ("clearAppBadge" in navigator) await navigator.clearAppBadge(); } catch { /* badges are optional */ }
+    return;
+  }
+  if (!("setAppBadge" in navigator)) return;
+  const remaining = game.quests.filter((q) => !q.done).length + (game.sideQuest && game.sideQuest.done ? 0 : 1);
+  try {
+    if (remaining) await navigator.setAppBadge(remaining);
+    else if ("clearAppBadge" in navigator) await navigator.clearAppBadge();
+  } catch { /* badges are optional */ }
 }
 
 /* ---------- sync (private data repo) ---------- */
@@ -279,6 +340,88 @@ async function fetchSyncFile(name) {
   return res.json();
 }
 
+async function cacheKvValue(key, value) {
+  const existing = await DB.get("kv", key);
+  if (existing && JSON.stringify(existing.value) === JSON.stringify(value)) return false;
+  await DB.put("kv", { key, value });
+  return true;
+}
+
+function validatedImpactSnapshot(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const finite = (value, min, max) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= min && number <= max ? number : null;
+  };
+  const completePostDays = finite(raw.completePostDays, 1, 366);
+  const metric = (name) => {
+    const value = raw.metrics && raw.metrics[name] && raw.metrics[name].post
+      ? finite(raw.metrics[name].post.recentChangePct, -1000, 1000)
+      : null;
+    return value === null ? null : { post: { recentChangePct: value } };
+  };
+  const metrics = {
+    steps: metric("steps"),
+    activeMinutes: metric("activeMinutes"),
+    sleepMinutes: metric("sleepMinutes"),
+  };
+  const daily = Array.isArray(raw.daily) ? raw.daily.map((row) => ({
+    date: row && /^\d{4}-\d{2}-\d{2}$/.test(String(row.date)) ? String(row.date) : null,
+    steps: row ? finite(row.steps, 0, 200000) : null,
+  })).filter((row) => row.date && row.steps !== null).slice(-366) : [];
+  const daysAt5000 = raw.stepConsistency ? finite(raw.stepConsistency.daysAt5000, 0, 366) : null;
+  const completeDays = raw.stepConsistency ? finite(raw.stepConsistency.completeDays, 1, 366) : null;
+  if (!completePostDays || Object.values(metrics).some((value) => !value) || !daily.length ||
+      daysAt5000 === null || completeDays === null) return null;
+  return {
+    completePostDays,
+    metrics,
+    daily,
+    stepConsistency: { daysAt5000, completeDays },
+    weight: { hasPostLaunchReading: Boolean(raw.weight && raw.weight.hasPostLaunchReading) },
+  };
+}
+
+async function recordAppOpen() {
+  const key = "opens:" + todayISO();
+  const row = await DB.get("kv", key);
+  await DB.put("kv", {
+    key,
+    value: { count: (row && row.value ? row.value.count : 0) + 1, last: new Date().toISOString() },
+  });
+}
+
+async function publishEngagementSummary() {
+  const cfg = syncConfig();
+  const enabled = await DB.get("kv", "nudgesEnabled");
+  if (!cfg.pat || !enabled || !enabled.value) return;
+  const last = await DB.get("kv", "engagementPublishedAt");
+  if (last && todayISO(new Date(last.value)) === todayISO()) return;
+  const [kv, checkins, sessions, meals, wins] = await Promise.all([
+    DB.all("kv"), DB.all("checkins"), DB.all("sessions"), DB.all("meallog"), DB.all("wins"),
+  ]);
+  const daily = {};
+  const day = (date) => daily[date] || (daily[date] = { date, opens: 0, checkinFields: 0, movementLogged: false, mealSlots: 0, sideQuest: false, win: false });
+  kv.forEach((row) => {
+    if (row.key.startsWith("opens:")) day(row.key.slice(6)).opens = Number(row.value && row.value.count) || 0;
+    if (row.key.startsWith("sidequest:") && row.value && row.value.done) day(row.key.slice(10)).sideQuest = true;
+  });
+  checkins.forEach((row) => { day(row.date).checkinFields = [row.meals, row.dinner, row.movement].filter(Boolean).length; });
+  sessions.forEach((row) => { day(row.date).movementLogged = true; });
+  const slots = {};
+  meals.forEach((row) => { (slots[row.date] || (slots[row.date] = new Set())).add(row.slot); });
+  Object.entries(slots).forEach(([date, values]) => { day(date).mealSlots = values.size; });
+  wins.forEach((row) => { day(row.date).win = true; });
+  const rows = Object.values(daily).filter((row) => row.date >= SETTINGS.firstUse).sort((a, b) => a.date.localeCompare(b.date)).slice(-60);
+  await putSyncFile("engagement.json", {
+    generated: new Date().toISOString(),
+    firstUse: SETTINGS.firstUse,
+    privacy: "Aggregated interaction counts only; no meal text, weight, or free-text wins.",
+    daily: rows,
+  });
+  await DB.put("kv", { key: "engagementPublishedAt", value: new Date().toISOString() });
+}
+
 async function syncNow(quiet = false) {
   let changed = false;
   const notes = [];
@@ -292,6 +435,7 @@ async function syncNow(quiet = false) {
       if (existing && existing.source === "manual") continue; // manual wins
       await DB.put("weights", { date: w.date, lbs: w.lbs, source: "garmin" });
     }
+    await DB.put("kv", { key: "garminGenerated", value: g.generated || null });
     if (Object.keys(g.steps || {}).length) { changed = true; notes.push("Garmin"); }
   } catch { notes.push("Garmin data unreachable"); }
   try {
@@ -316,6 +460,14 @@ async function syncNow(quiet = false) {
       changed = true; notes.push("meal week updated");
     }
   } catch { /* no meals published yet — fine */ }
+  try {
+    const impact = validatedImpactSnapshot(await fetchSyncFile("impact_snapshot.json"));
+    if (impact && await cacheKvValue("impactSnapshot", impact)) changed = true;
+  } catch { /* impact snapshot is optional during rollout */ }
+  try {
+    const nudgeStatus = await fetchSyncFile("nudge_status.json");
+    if (await cacheKvValue("nudgeStatus", nudgeStatus)) changed = true;
+  } catch { /* delivery status appears after the first repaired send */ }
   await DB.put("kv", { key: "lastSync", value: new Date().toISOString() });
   if (changed) show(activeTab);
   if (!quiet) toast(changed ? "Synced — " + notes.join(", ") : "Synced — nothing new");
@@ -348,40 +500,130 @@ async function putSyncFile(name, obj) {
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status} — the token likely needs read-and-write Contents access`);
 }
 
-async function enableNotifications() {
-  if (!("Notification" in window) || !("PushManager" in window)) {
-    toast("Push isn't available here. On the iPhone, use the home-screen app.");
-    return;
-  }
-  const perm = await Notification.requestPermission();
-  if (perm !== "granted") { toast("Notifications stay off until allowed"); return; }
+function relativeTime(value) {
+  if (!value) return "never";
+  const ms = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(ms)) return "unknown";
+  const mins = Math.max(0, Math.round(ms / 60000));
+  if (mins < 2) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 36) return `${hours} hr ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+async function getPushReceipt() {
   try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.subscribe({
+    const cache = await caches.open("baseline-push-state");
+    const response = await cache.match("./push-receipt.json");
+    return response ? response.json() : null;
+  } catch { return null; }
+}
+
+async function ensurePushSubscription({ forceUpload = false } = {}) {
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    throw new Error("Push is available only in the installed home-screen app");
+  }
+  if (Notification.permission !== "granted") throw new Error("Notification permission is not granted");
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: b64ToUint8(VAPID_PUBLIC_KEY),
     });
-    await putSyncFile("subscription.json", sub.toJSON());
-    await DB.put("kv", { key: "pushEndpoint", value: sub.endpoint });
-    toast("Nudges on — morning, lunch, dinner");
+  }
+  const payload = sub.toJSON();
+  const fingerprint = JSON.stringify(payload);
+  const cached = await DB.get("kv", "pushSubscriptionFingerprint");
+  const uploaded = await DB.get("kv", "pushUploadedAt");
+  const uploadIsOld = !uploaded || Date.now() - new Date(uploaded.value).getTime() > 20 * 3600e3;
+  if (forceUpload || uploadIsOld || !cached || cached.value !== fingerprint) {
+    await putSyncFile("subscription.json", payload);
+    await DB.put("kv", { key: "pushSubscriptionFingerprint", value: fingerprint });
+    await DB.put("kv", { key: "pushUploadedAt", value: new Date().toISOString() });
+  }
+  await DB.put("kv", { key: "nudgesEnabled", value: true });
+  await DB.del("kv", "pushRepairNeeded");
+  return sub;
+}
+
+async function notificationHealth() {
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    return { state: "unsupported", label: "Install the home-screen app for reminders", action: "Open settings" };
+  }
+  if (Notification.permission !== "granted") {
+    return { state: "off", label: Notification.permission === "denied" ? "Reminders are blocked on this device" : "Reminders are off", action: "Set up" };
+  }
+  let subscription = null;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    subscription = reg ? await reg.pushManager.getSubscription() : null;
+  } catch { /* health remains repairable below */ }
+  if (!subscription) return { state: "repair", label: "Reminder connection needs repair", action: "Repair" };
+  const repair = await DB.get("kv", "pushRepairNeeded");
+  if (repair && repair.value) {
+    return { state: "repair", label: String(repair.value), action: "Repair" };
+  }
+  const row = await DB.get("kv", "nudgeStatus");
+  const server = row ? row.value : null;
+  const receipt = await getPushReceipt();
+  if (server && ["needs_setup", "needs_resubscribe", "error", "degraded"].includes(server.state)) {
+    return { state: "repair", label: server.last_error || "Reminder delivery needs repair", action: "Repair", server, receipt };
+  }
+  if (!server || !server.last_sent) {
+    return { state: "checking", label: "Reminder delivery is awaiting its first verified send", action: "Test", server, receipt };
+  }
+  const age = Date.now() - new Date(server.last_sent).getTime();
+  if (age > 36 * 3600e3) {
+    return { state: "checking", label: `Last server send was ${relativeTime(server.last_sent)}`, action: "Test", server, receipt };
+  }
+  const received = receipt && receipt.receivedAt ? ` · device received ${relativeTime(receipt.receivedAt)}` : "";
+  return { state: "healthy", label: `Reminders connected · server sent ${relativeTime(server.last_sent)}${received}`, action: "Details", server, receipt };
+}
+
+async function enableNotifications() {
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    toast("On iPhone, install Baseline to the home screen first");
+    return false;
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") { toast("Notifications stay off until allowed"); return false; }
+  try {
+    await ensurePushSubscription({ forceUpload: true });
+    await DB.put("kv", { key: "nudgesEnabled", value: true });
+    toast("Reminders connected");
+    return true;
   } catch (err) {
-    toast("Could not finish setup: " + err.message);
+    await DB.put("kv", { key: "pushRepairNeeded", value: err.message });
+    toast("Could not connect reminders: " + err.message);
+    return false;
   }
 }
 
-/* iOS occasionally rotates subscriptions — keep the stored one current. */
-async function refreshPushSubscription() {
+async function requestTestNotification() {
   try {
-    if (!("PushManager" in window) || Notification.permission !== "granted") return;
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (!sub) return;
-    const cached = await DB.get("kv", "pushEndpoint");
-    if (!cached || cached.value !== sub.endpoint) {
-      await putSyncFile("subscription.json", sub.toJSON());
-      await DB.put("kv", { key: "pushEndpoint", value: sub.endpoint });
-    }
-  } catch { /* quiet — retried next open */ }
+    await ensurePushSubscription({ forceUpload: true });
+    await putSyncFile("test_request.json", {
+      requestedAt: new Date().toISOString(),
+      nonce: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    });
+    toast("Test requested · it should arrive shortly");
+    return true;
+  } catch (err) {
+    toast("Could not request a test: " + err.message);
+    return false;
+  }
+}
+
+/* Keep the full iOS subscription current; endpoints and keys can both rotate. */
+async function refreshPushSubscription() {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    await ensurePushSubscription();
+  } catch (err) {
+    await DB.put("kv", { key: "pushRepairNeeded", value: err.message });
+  }
 }
 
 /* ---------- sheet (modal) ---------- */
@@ -430,12 +672,27 @@ RENDER.today = async function () {
   const dow = dowIndex(date);
   const showReview = dow === 6 || dow === 0; // Sun or Mon
   const game = SETTINGS.gameMode ? await gameSnapshot(date) : null;
+  const reminder = await notificationHealth();
+  const garminGenerated = await DB.get("kv", "garminGenerated");
+  const garminAge = garminGenerated && garminGenerated.value ? Date.now() - new Date(garminGenerated.value).getTime() : null;
+  const garminStale = garminAge !== null && garminAge > 36 * 3600e3;
 
   const chip = (name, val, cur) =>
     `<button class="chip ${cur === val ? "on" : ""}" data-ci="${name}" data-val="${val}">${val}</button>`;
 
   view.innerHTML = `
   ${showReview ? `<div id="reviewCard"></div>` : ""}
+
+  ${reminder.state !== "unsupported" ? `<div class="health-strip ${reminder.state}">
+    <span class="health-dot" aria-hidden="true"></span>
+    <span>${esc(reminder.label)}</span>
+    <button id="reminderHealthBtn">${esc(reminder.action)}</button>
+  </div>` : ""}
+  ${garminStale ? `<div class="health-strip repair">
+    <span class="health-dot" aria-hidden="true"></span>
+    <span>Garmin data is ${esc(relativeTime(garminGenerated.value))} old</span>
+    <button id="garminHealthBtn">Details</button>
+  </div>` : ""}
 
   ${game ? `
   <section class="momentum-hero" aria-labelledby="momentumTitle">
@@ -453,7 +710,7 @@ RENDER.today = async function () {
     ${progressBar(game.levelPoints, LEVEL_SIZE, `Level ${game.level} progress`)}
     <div class="quest-head">
       <div><strong>Daily quest</strong><span>${game.quests.filter((q) => q.done).length} of ${game.quests.length} complete</span></div>
-      <span class="quest-points">showing up earns points</span>
+      <span class="quest-points">${game.quests.every((q) => q.done) ? "+10 set bonus earned" : "complete the set for +10"}</span>
     </div>
     <div class="quest-list">
       ${game.quests.map((q) => `
@@ -466,11 +723,25 @@ RENDER.today = async function () {
             `<button class="quest-action" data-quest-dinner>Choose</button>`}
         </article>`).join("")}
     </div>
+    <div class="sidequest-panel ${game.sideQuest && game.sideQuest.done ? "done" : ""}">
+      <div class="sidequest-head"><strong>Side quest</strong><span>choose one · +8</span></div>
+      ${game.sideQuest ? `<div class="sidequest-selected">
+        <div><strong>${esc(game.sideQuest.title)}</strong><span>${esc(game.sideQuest.text)}</span></div>
+        ${game.sideQuest.done
+          ? `<span class="quest-state">complete</span>`
+          : `<button class="quest-action" data-side-done>Complete</button>`}
+      </div>
+      ${game.sideQuest.done ? "" : `<button class="sidequest-change" data-side-reset>choose another</button>`}`
+      : `<div class="sidequest-options">${game.sideQuestOptions.map((q) =>
+          `<button data-side-pick="${q.id}"><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span></button>`).join("")}</div>`}
+    </div>
+    ${game.returnBonusEligible ? `<p class="return-bonus">Return bonus ready · your next logged action earns +5. Nothing reset.</p>` : ""}
+    ${game.returnBonusEarned ? `<p class="return-bonus earned">Return bonus earned · +5 for coming back.</p>` : ""}
     <p class="game-rule">Points reward noticing, planning, and logging. They never rank a meal or a number on the scale.</p>
   </section>` : ""}
 
-  <div class="card">
-    <h2>Weight <span class="sub">lb</span></h2>
+  <details class="card weight-card">
+    <summary>Weight <span>${last ? `${last.lbs.toFixed(1)} lb · ${fmtNice(last.date)}` : "add a reading"}</span></summary>
     <div class="row">
       <input type="number" inputmode="decimal" step="0.1" min="80" max="500" id="wIn"
              placeholder="${last ? last.lbs.toFixed(1) : "e.g., 240.0"}">
@@ -480,7 +751,7 @@ RENDER.today = async function () {
       ${last ? `Last: <strong>${last.lbs.toFixed(1)}</strong> (${fmtNice(last.date)})` : "No entries yet"}
       ${rate !== null ? ` · 7-day trend ${rate > 0 ? "+" : ""}${rate.toFixed(1)} lb/wk` : ""}
     </p>
-  </div>
+  </details>
 
   <div class="card" id="checkinCard">
     <h2>Check-in <span class="sub">a few taps, done</span></h2>
@@ -545,6 +816,28 @@ RENDER.today = async function () {
   </div>`;
 
   // events
+  const reminderHealthBtn = $("#reminderHealthBtn", view);
+  if (reminderHealthBtn) reminderHealthBtn.addEventListener("click", openSettings);
+  const garminHealthBtn = $("#garminHealthBtn", view);
+  if (garminHealthBtn) garminHealthBtn.addEventListener("click", openSettings);
+  $$('[data-side-pick]', view).forEach((button) => button.addEventListener("click", async () => {
+    await DB.put("kv", { key: `sidequest:${date}`, value: { id: button.dataset.sidePick, done: false } });
+    toast("Side quest chosen");
+    RENDER.today();
+  }));
+  const sideDone = $("[data-side-done]", view);
+  if (sideDone) sideDone.addEventListener("click", async () => {
+    const row = await DB.get("kv", `sidequest:${date}`);
+    if (!row || !row.value) return;
+    await DB.put("kv", { key: `sidequest:${date}`, value: { ...row.value, done: true } });
+    toast("Side quest complete · +8 momentum");
+    RENDER.today();
+  });
+  const sideReset = $("[data-side-reset]", view);
+  if (sideReset) sideReset.addEventListener("click", async () => {
+    await DB.del("kv", `sidequest:${date}`);
+    RENDER.today();
+  });
   const pauseQuest = $("[data-quest-pause]", view);
   if (pauseQuest) pauseQuest.addEventListener("click", async () => {
     await DB.put("kv", { key: `quest:${date}:pause`, value: true });
@@ -632,6 +925,7 @@ RENDER.today = async function () {
   if (logOther) logOther.addEventListener("click", openLogOther);
 
   if (showReview) renderReviewCard();
+  updateAppBadge(game);
 };
 
 /* Log whatever actually happened — the plan is a suggestion, the log is truth. */
@@ -1090,6 +1384,8 @@ RENDER.trends = async function () {
   const c7 = checkins.filter((c) => within(c.date, 7) && (c.meals || c.dinner || c.movement)).length;
   const c28 = checkins.filter((c) => within(c.date, 28) && (c.meals || c.dinner || c.movement)).length;
   const game = SETTINGS.gameMode ? await gameSnapshot(now) : null;
+  const impactRow = await DB.get("kv", "impactSnapshot");
+  const impact = impactRow ? impactRow.value : null;
   const recentGameDays = Array.from({ length: 7 }, (_, i) => addDays(now, i - 6));
 
   view.innerHTML = `
@@ -1126,6 +1422,25 @@ RENDER.trends = async function () {
         <strong>${esc(a.name)}</strong><span>${esc(a.note)}</span>
       </div>`).join("")}
     </div>
+  </div>` : ""}
+
+  ${impact && impact.completePostDays ? `
+  <div class="card impact-card">
+    <div class="impact-head">
+      <div><p class="eyebrow">Since launch</p><h2>Early signal <span class="sub">${impact.completePostDays} complete days</span></h2></div>
+      <span class="impact-callout">promising, not proof</span>
+    </div>
+    <div class="impact-metrics">
+      ${[["Steps", impact.metrics.steps], ["Active time", impact.metrics.activeMinutes], ["Sleep", impact.metrics.sleepMinutes]].map(([label, metric]) => {
+        const change = metric.post.recentChangePct;
+        return `<div><strong>${change > 0 ? "+" : ""}${change}%</strong><span>${label}<br>vs prior 28 days</span></div>`;
+      }).join("")}
+    </div>
+    <div class="impact-bars" aria-label="Daily steps since launch">
+      ${impact.daily.map((row) => `<div><i style="height:${Math.max(8, Math.min(100, row.steps / 9000 * 100))}%"></i><span>${DOW[dowIndex(row.date)].slice(0, 1)}</span></div>`).join("")}
+    </div>
+    <p class="hint">${impact.stepConsistency.daysAt5000} of ${impact.stepConsistency.completeDays} days reached 5,000 steps. ${impact.weight.hasPostLaunchReading ? "Weight has a post-launch reading." : "There is no post-launch weight reading yet."}</p>
+    <p class="impact-caveat">A short before/after window can show direction, not causation. This card updates with each PC sync.</p>
   </div>` : ""}
 
   <div class="card">
@@ -1313,12 +1628,14 @@ async function openSettings() {
   const t = SETTINGS.mealTimes;
   const sc = syncConfig();
   const lastSync = await DB.get("kv", "lastSync");
+  const garminGenerated = await DB.get("kv", "garminGenerated");
+  const nudgeHealth = await notificationHealth();
   const sheet = openSheet(`
     <h2>Settings</h2>
 
     <details class="settings-group" ${sc.pat ? "" : "open"}>
       <summary>Sync</summary>
-      <p class="hint" style="margin:6px 0">Reads the private data repo your PC publishes to. The token needs read-only Contents access to that one repo, nothing else.</p>
+      <p class="hint" style="margin:6px 0">Reads the private data repo your PC publishes to. Read-only Contents access is enough for data sync; reminders and test sends need read-and-write Contents access.</p>
       <div class="row" style="margin-bottom:8px">
         <div><span class="quiet" style="font-size:13px">GitHub owner</span><input type="text" id="syOwner" value="${esc(sc.owner || "aintfunny18-tech")}"></div>
         <div><span class="quiet" style="font-size:13px">Data repo</span><input type="text" id="syRepo" value="${esc(sc.repo || "baseline-data")}"></div>
@@ -1329,13 +1646,19 @@ async function openSettings() {
         <button class="btn secondary fit" id="sySyncNow">Sync now</button>
         <span class="quiet" style="font-size:13px">${lastSync ? "Last sync " + new Date(lastSync.value).toLocaleString() : "Never synced on this device"}</span>
       </div>
+      <p class="hint">Garmin snapshot: ${garminGenerated && garminGenerated.value ? relativeTime(garminGenerated.value) : "not available"}</p>
     </details>
 
-    <details class="settings-group">
+    <details class="settings-group" ${nudgeHealth.state === "healthy" ? "" : "open"}>
       <summary>Nudges</summary>
-      <p class="hint" style="margin:6px 0">Three quiet daily notifications: morning (session + breakfast), lunch anchor, dinner window. Needs the home-screen app and a sync token with read-and-write Contents access.</p>
-      <p class="hint" style="margin:6px 0">${("Notification" in window) ? "Permission: " + Notification.permission : "Not supported in this browser"}</p>
-      <button class="btn secondary" id="sNotif">Enable on this device</button>
+      <p class="hint" style="margin:6px 0">Three daily reminders: morning quest, lunch reset, and dinner window. The sender retries delayed jobs and records delivery health.</p>
+      <div class="settings-health ${nudgeHealth.state}"><span class="health-dot"></span><div><strong>${esc(nudgeHealth.label)}</strong>
+        <span>Permission: ${("Notification" in window) ? Notification.permission : "unsupported"}${nudgeHealth.receipt && nudgeHealth.receipt.receivedAt ? ` · last received ${relativeTime(nudgeHealth.receipt.receivedAt)}` : ""}</span></div></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn secondary" id="sNotif">${nudgeHealth.state === "off" ? "Enable reminders" : "Repair connection"}</button>
+        <button class="btn primary" id="sNotifTest">Send a test</button>
+      </div>
+      <p class="hint">Tests usually arrive within a minute. If iPhone permission is blocked, change it in Settings → Notifications → Baseline.</p>
     </details>
 
     <details class="settings-group" open>
@@ -1406,6 +1729,15 @@ async function openSettings() {
   $("#sNotif", sheet).addEventListener("click", async () => {
     saveSyncConfig({ owner: $("#syOwner").value.trim(), repo: $("#syRepo").value.trim(), pat: $("#syPat").value.trim() });
     await enableNotifications();
+  });
+  $("#sNotifTest", sheet).addEventListener("click", async () => {
+    saveSyncConfig({ owner: $("#syOwner").value.trim(), repo: $("#syRepo").value.trim(), pat: $("#syPat").value.trim() });
+    if (!("Notification" in window) || Notification.permission !== "granted") {
+      if (!(await enableNotifications())) return;
+    }
+    $("#sNotifTest", sheet).disabled = true;
+    await requestTestNotification();
+    $("#sNotifTest", sheet).disabled = false;
   });
   $("#sySyncNow", sheet).addEventListener("click", async () => {
     saveSyncConfig({ owner: $("#syOwner").value.trim(), repo: $("#syRepo").value.trim(), pat: $("#syPat").value.trim() });
@@ -1479,11 +1811,20 @@ async function importGarminWeights(file) {
 (async function boot() {
   $("#todayDate").textContent = fmtNice(todayISO());
   await loadSettings();
-  await show("today");
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    await navigator.serviceWorker.register("sw.js").catch(() => {});
   }
-  syncNow(true).catch(() => {}); // background refresh; quiet on failure
+  await recordAppOpen();
+  await show("today");
+  const focus = new URLSearchParams(location.search).get("focus");
+  if (focus) {
+    setTimeout(() => {
+      const target = focus === "morning" ? $("#sessionCard") : focus === "lunch" || focus === "dinner" ? $("#mealCard") : $("#reminderHealthBtn");
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      history.replaceState({}, "", location.pathname);
+    }, 250);
+  }
+  syncNow(true).then(() => publishEngagementSummary()).catch(() => {});
   refreshPushSubscription();
 })();
 

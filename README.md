@@ -6,9 +6,12 @@ No calorie counting, no food labels, no guilt mechanics — habit-based
 by design.
 
 - Vanilla HTML/CSS/JS, no build step, no dependencies
-- IndexedDB storage on-device; optional sync from a private GitHub
-  data repo via a fine-grained read-only token
+- IndexedDB storage on-device; optional sync from a private GitHub data repo.
+  Read-only Contents access is enough for data pulls; reminders, test sends,
+  and private engagement summaries require read-and-write Contents access.
 - Installable (manifest + service worker, offline-capable)
+- Health-checked morning, lunch, and dinner web-push reminders
+- Private Garmin sync and an automatically refreshed early-impact comparison
 
 Personal project; data stays with its owner.
 

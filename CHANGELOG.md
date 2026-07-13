@@ -6,6 +6,43 @@ This file records user-visible changes to Baseline. Dates use Eastern Time.
 
 No unreleased changes.
 
+## 1.2.0 - 2026-07-12
+
+### Added
+
+- Reminder health on Today and in Settings, including server-send and
+  device-receipt timestamps.
+- One-tap reminder repair and app-triggered test sends.
+- A daily choice-based side quest worth 8 momentum points.
+- A 10-point daily quest-set bonus and 5-point comeback bonus after a gap.
+- Home-screen app badges showing unfinished daily actions when supported.
+- A private, automatically refreshed early-impact card in Trends.
+- Private daily engagement aggregates for future app-use/outcome comparisons;
+  meal text, weight, and free-text wins are excluded.
+- Stale Garmin-data warnings.
+
+### Changed
+
+- Weight entry is collapsed by default to keep the daily interaction loop
+  focused on quick actions.
+- Reminder taps now open the relevant morning, lunch, or dinner action.
+- Push-subscription repair compares the complete subscription, resubscribes
+  when missing, and refreshes a server copy older than 20 hours whenever the
+  app runs.
+
+### Fixed
+
+- Scheduled reminders previously sent zero pushes because delayed GitHub jobs
+  fell outside narrow one-hour gates while still reporting success.
+- The repaired sender makes several attempts per slot, deduplicates successful
+  sends, records missed or expired delivery state, and passed a live test.
+- Garmin sync no longer falls into an unusable credential prompt during an
+  unattended task after a transient cached-session failure.
+- Garmin uploads now use standard input instead of exceeding Windows' process
+  command-length limit.
+- The Windows sync task now starts when available, retries, runs on battery,
+  wakes the PC, and writes sanitized status plus rotating local logs.
+
 ## 1.1.0 - 2026-07-10
 
 ### Added

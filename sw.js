@@ -1,5 +1,6 @@
 /* Baseline — service worker: cache-first app shell for offline use. */
-const CACHE = "baseline-v9";
+const CACHE = "baseline-v10";
+const PUSH_STATE_CACHE = "baseline-push-state";
 const SHELL = [
   "./",
   "./index.html",
@@ -21,7 +22,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== PUSH_STATE_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -29,18 +30,36 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("push", (e) => {
   let data = {};
   try { data = e.data.json(); } catch { data = { body: e.data && e.data.text() }; }
-  e.waitUntil(self.registration.showNotification(data.title || "Baseline", {
-    body: data.body || "",
-    icon: "icons/icon-192.png",
-    badge: "icons/icon-192.png",
-  }));
+  const receipt = {
+    receivedAt: new Date().toISOString(),
+    slot: data.slot || null,
+    title: data.title || "Baseline",
+  };
+  e.waitUntil(Promise.all([
+    caches.open(PUSH_STATE_CACHE).then((cache) => cache.put(
+      "./push-receipt.json",
+      new Response(JSON.stringify(receipt), { headers: { "Content-Type": "application/json" } }),
+    )).catch(() => {}),
+    self.registration.showNotification(data.title || "Baseline", {
+      body: data.body || "",
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
+      tag: data.tag || "baseline-reminder",
+      renotify: true,
+      data: { url: data.url || "./", slot: data.slot || null },
+    }),
+  ]));
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  const target = new URL((e.notification.data && e.notification.data.url) || "./", self.location.href).href;
   e.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-    for (const c of list) if ("focus" in c) return c.focus();
-    return clients.openWindow("./");
+    for (const c of list) {
+      if ("navigate" in c && "focus" in c) return c.navigate(target).then(() => c.focus());
+      if ("focus" in c) return c.focus();
+    }
+    return clients.openWindow(target);
   }));
 });
 
